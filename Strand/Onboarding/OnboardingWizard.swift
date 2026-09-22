@@ -410,8 +410,8 @@ private struct ExpectationsStep: View {
                 // expectation up front rather than letting it surprise people later (#222 / cert expiry).
                 expectationRow(
                     icon: "iphone.gen3",
-                    title: String(localized: "Installed outside the App Store"),
-                    body: String(localized: "On iPhone this is a sideloaded build. Re-sign it about every 7 days on a free Apple ID (longer on a paid account). After your phone reboots, unlock it once so NOOP can read and sync its data.")
+                    title: String(localized: "Installed with Nutry on TestFlight"),
+                    body: String(localized: "This WHOOP experience ships inside Nutry. Updates arrive through TestFlight — do not install a separate NOOP IPA. After your phone reboots, unlock it once so the strap can sync.")
                 )
                 .opacity(shown ? 1 : 0)
                 .offset(y: shown ? 0 : 8)

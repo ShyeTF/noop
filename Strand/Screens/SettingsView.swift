@@ -321,11 +321,6 @@ struct SettingsView: View {
     /// low-power, sideload + cert expiry). iOS-only; the macOS strap log already carries OS + version.
     @State private var showDiagnostics = false
 
-    /// User-initiated GitHub release check behind the About "Check for updates" button.
-    @StateObject private var updateChecker = UpdateChecker()
-    /// #1659. Default comes from `UpdateAvailability.defaultEnabled` so the toggle and the launch check
-    /// cannot disagree about what "unset" means.
-    @AppStorage(UpdateWatch.Keys.enabled) private var autoCheckUpdates = UpdateAvailability.defaultEnabled
     @Environment(\.openURL) private var openURL
 
     /// Whether the "Advanced" disclosure (Recovery, Test Centre, experimental probes, Backup &
@@ -2978,96 +2973,23 @@ struct SettingsView: View {
                 iphoneExpectations
                 #endif
 
-                // Check for updates — a single, user-initiated read of GitHub's public releases API.
-                // No background polling, no auto-update; sends nothing about you, just reads the version.
+                // Nutry ships this engine inside TestFlight. Do not send people to ryanbr/noop IPA builds.
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                    HStack(spacing: NoopMetrics.space2 + 2) {
-                        Button {
-                            // Compare the ACTUAL installed bundle version against GitHub's latest, not the
-                            // hand-maintained AppChangelog.currentVersion (which drifts stale and told v7
-                            // users they were behind, #697-adjacent). Mirrors Android's BuildConfig check.
-                            updateChecker.check(currentVersion: bundleVersionString)
-                        } label: {
-                            if updateChecker.state == .checking {
-                                HStack(spacing: NoopMetrics.space1 + 2) {
-                                    ProgressView().controlSize(.small)
-                                    Text("Checking…")
-                                }
-                            } else {
-                                Label("Check for updates", systemImage: "arrow.triangle.2.circlepath")
-                            }
-                        }
-                        .buttonStyle(NoopButtonStyle(.secondary))
-                        .disabled(updateChecker.state == .checking)
-
-                        if case .upToDate(let v) = updateChecker.state {
-                            Text("You're on the latest (\(v)).")
+                    HStack(spacing: 10) {
+                        Image(systemName: "airplane")
+                            .foregroundStyle(StrandPalette.accent)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Nutry updates")
+                                .font(StrandFont.subhead)
+                                .foregroundStyle(StrandPalette.textPrimary)
+                            Text("This WHOOP page is powered by NOOP inside Nutry. Install updates from TestFlight — never from a separate NOOP IPA.")
                                 .font(StrandFont.footnote)
                                 .foregroundStyle(StrandPalette.textSecondary)
-                        } else if case .failed = updateChecker.state {
-                            Text("Couldn't check. Try again.")
-                                .font(StrandFont.footnote)
-                                .foregroundStyle(StrandPalette.statusWarning)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
                     }
-
-                    // #1659: the automatic half. iOS cannot auto-update a sideloaded build at all — no API
-                    // lets an app install or re-sign an .ipa — so noticing and saying so is the whole of
-                    // what is possible. ON by default, because a sideloaded app has no store to tell the
-                    // user anything and a setting nobody finds is the feature not existing; switching it
-                    // off here stops the request entirely. See UpdateAvailability.defaultEnabled.
-                    Toggle(isOn: $autoCheckUpdates) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Check automatically")
-                                .font(StrandFont.subhead)
-                                .foregroundStyle(StrandPalette.textPrimary)
-                            Text("Once a day, NOOP asks GitHub for the latest version number and puts a note in Updates if there's a newer one. Nothing about you is sent, and it never installs anything.")
-                                .font(StrandFont.footnote)
-                                .foregroundStyle(StrandPalette.textSecondary)
-                        }
-                    }
-                    .tint(StrandPalette.accent)
-
-                    // Update available: show what's new, with a download straight to the release.
-                    if case .available(let v, let url, let notes) = updateChecker.state {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Version \(v) is available")
-                                    .font(StrandFont.subhead)
-                                    .foregroundStyle(StrandPalette.textPrimary)
-                                Spacer()
-                                NoopButton("Download", systemImage: "arrow.down.circle.fill", kind: .primary) {
-                                    openURL(url)
-                                }
-                            }
-                            if !notes.isEmpty {
-                                ScrollView {
-                                    Text(notes)
-                                        .font(StrandFont.footnote)
-                                        .foregroundStyle(StrandPalette.textSecondary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                #if os(iOS)
-                                // #697/#horizontal-swipe parity, see ScreenScaffold.
-                                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-                                #endif
-                                .frame(maxHeight: 150)
-                            }
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(StrandPalette.surfaceInset,
-                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(StrandPalette.accent.opacity(0.3), lineWidth: 1)
-                        )
-                    }
-
-                    Text("Checks the project's home (GitHub) for the latest version when you tap. Nothing else is sent.")
-                        .font(StrandFont.footnote)
-                        .foregroundStyle(StrandPalette.textTertiary)
                 }
 
                 // Project home — NOOP's code, releases, issues and wiki live on GitHub.
@@ -3200,7 +3122,7 @@ struct SettingsView: View {
                     .foregroundStyle(StrandPalette.textPrimary)
             }
 
-            iphoneExpectationLine(String(localized: "This is a sideloaded build, installed outside the App Store. It needs re-signing periodically: roughly every 7 days on a free Apple ID, about a year on a paid developer account."))
+            iphoneExpectationLine(String(localized: "This WHOOP experience is part of Nutry on TestFlight. Updates arrive with Nutry — do not install a separate NOOP IPA."))
             iphoneExpectationLine(String(localized: "After your iPhone reboots, unlock it once. Until you do, iOS keeps NOOP's files locked (Data Protection), so new history can't be written or synced."))
             iphoneExpectationLine(String(localized: "Background Bluetooth has OS limits: iOS may pause NOOP when it's not in the foreground, so keep it open while syncing a fresh strap."))
             iphoneExpectationLine(String(localized: "On a beta version of iOS, things can break that work on the release build."))
