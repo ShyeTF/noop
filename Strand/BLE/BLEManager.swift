@@ -7190,6 +7190,7 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
                 helloOutstanding: helloOutstanding,
                 alreadyBonded: didBond,
                 encryptedBond: state.encryptedBond,
+                samePeripheralAsBond: lastBondedPeripheralUUID == peripheral.identifier,
                 isWhoop5: true
             ) {
             case .firstBond:
@@ -7303,7 +7304,9 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
             return
         }
 
-        switch Whoop4BondAck.classify(didBond: didBond, encryptedBond: state.encryptedBond) {
+        switch Whoop4BondAck.classify(didBond: didBond,
+                                      encryptedBond: state.encryptedBond,
+                                      samePeripheralAsBond: lastBondedPeripheralUUID == peripheral.identifier) {
         case .firstBond:
             didBond = true
             state.bonded = true
