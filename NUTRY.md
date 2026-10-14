@@ -23,6 +23,7 @@ L’application Nutry **ne se met pas à jour** en allant lire GitHub. Les mises
 - `Strand/System/UpdateAvailability.swift` — pas de contrôle auto GitHub
 - `Strand/Screens/SettingsView.swift` — CTA Nutry / TestFlight
 - `Strand/Onboarding/OnboardingWizard.swift` — attentes TestFlight
+- `Strand/App/GpsWorkoutRecorder.swift` — localisation en arrière-plan seulement pendant l’enregistrement d’un tracé (App Review 2.5.4, Nutry PR #217)
 
 ## Réseau
 
