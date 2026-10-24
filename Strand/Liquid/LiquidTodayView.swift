@@ -27,6 +27,7 @@ struct LiquidTodayView: View {
     // would re-render all of Today every second (the exact churn the LiveState leaves isolate). BLEManager
     // only publishes connect/discovery state, never HR. Injected at the app roots beside .environmentObject(model).
     @EnvironmentObject var ble: BLEManager
+    @Environment(\.nutryWhoopHosted) private var nutryWhoopHosted
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Low Power Mode — and the in-app "Reduce motion in NOOP" toggle — pose the sky still too, the
     /// behaviour the comment on the sky branch below has always described. Neither has a SwiftUI
@@ -434,7 +435,7 @@ struct LiquidTodayView: View {
                     .accessibilityHidden(true)
                 }
             }
-            .ignoresSafeArea()
+            .ignoresSafeArea(edges: nutryWhoopHosted ? [.horizontal] : .all)
         }
         .coordinateSpace(name: Self.daySwipeSpace)
         .onPreferenceChange(LiquidHeartRateCardFrameKey.self) { heartRateCardFrame = $0 }
@@ -563,7 +564,7 @@ struct LiquidTodayView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(dayTitle). Tap to pick a day, swipe to change day.")
+                .accessibilityLabel(String(localized: "\(dayTitle). Tap to pick a day, swipe to change day."))
                 .popover(isPresented: $showDayPicker) {
                     DatePicker("", selection: dayPickerBinding, in: ...Repository.logicalDay(Date()),
                                displayedComponents: [.date])
@@ -697,6 +698,7 @@ struct LiquidTodayView: View {
                           maxValue: effortScale == .whoop ? 21 : 100,
                           decimals: effortScale == .whoop ? 1 : 0,
                           detailRoute: .metric(HeroRingMetric.effort))
+            // Hosted Nutry reads this score as "Repos" once the French catalog resolves "Rest".
             HeroScoreCell(label: String(localized: "Rest"), score: restScore, tint: StrandPalette.restColor,
                           animated: dataLoaded, onGuide: { guideSection = .rest },
                           detailRoute: .metric(HeroRingMetric.rest))
@@ -708,7 +710,7 @@ struct LiquidTodayView: View {
                             .frame(width: HeroScoreCell.vesselDiameter, alignment: .trailing)
                             .offset(y: -(NoopMetrics.space4 + NoopMetrics.sourceBadgeHeight / 2))
                             .allowsHitTesting(false)
-                            .accessibilityLabel(Text("Source: \(sourceLabel)"))
+                            .accessibilityLabel(Text(String(localized: "Source: \(sourceLabel)")))
                     }
                 }
         }
@@ -1384,7 +1386,7 @@ struct LiquidTodayView: View {
         case .rest:
             ktile(String(localized: "Rest"), icon: keyMetricIcon(metric), intText(restScore), "%", StrandPalette.restColor, frac(restScore), key: HeroRingMetric.rest)
         case .hrv:
-            ktile("HRV", icon: keyMetricIcon(metric), intText(hrv), "ms", StrandPalette.metricCyan, fracOver(hrv, 120), key: "hrv")
+            ktile(String(localized: "HRV"), icon: keyMetricIcon(metric), intText(hrv), "ms", StrandPalette.metricCyan, fracOver(hrv, 120), key: "hrv")
         case .restingHr:
             ktile(String(localized: "Rest HR"), icon: keyMetricIcon(metric), intText(rhr), "bpm", StrandPalette.metricRose, fracOver(rhr, 100), key: "rhr")
         case .bloodOxygen:
@@ -2256,7 +2258,7 @@ private struct HeroScoreCell: View {
                 .foregroundStyle(StrandPalette.textSecondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("\(label), \(spokenScore). See how it is scored."))
+            .accessibilityLabel(Text(String(localized: "\(label), \(spokenScore). See how it is scored.")))
         }
         .frame(maxWidth: .infinity)
     }
@@ -2577,7 +2579,7 @@ private struct LiquidLiveHR: View {
                 }
                 .stroke(tint, lineWidth: NoopMetrics.hairlineWidth)
                 Circle().fill(tint).frame(width: 8, height: 8).position(x: x, y: y)
-                (Text("\(Int(series[index].rounded()))").font(StrandFont.captionNumber)
+                (Text(String(localized: "\(Int(series[index].rounded()))")).font(StrandFont.captionNumber)
                     + Text(" bpm").font(StrandFont.caption))
                     .foregroundStyle(StrandPalette.textPrimary)
                     .padding(.horizontal, NoopMetrics.space2)

@@ -125,13 +125,14 @@ actor SkinTempBackfillWalker {
             // shift: `dayString(ts, offsetSec:) == day` ⇔ `(ts + offsetSec) ∈ [dayStart, +86400)`.
             let dayStart = Self.localMidnightUnix(forDay: candidate.day, tzOffsetSeconds: tzOffsetSeconds)
 
+            let resolved = SkinTempPacket.family(samples: skin, registry: family)
             let result = SkinTempBackfill.computeNight(
                 candidate: candidate,
                 sessions: sessions,
                 hr: hr,
                 skinTemp: skin,
-                family: family,
-                windowAnchorRaw: windowAnchorRaw,
+                family: resolved,
+                windowAnchorRaw: resolved == .whoop4 ? windowAnchorRaw : nil,
                 dayStart: dayStart,
                 wornToleranceSec: tolerance)
 

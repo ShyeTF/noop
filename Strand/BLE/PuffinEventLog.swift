@@ -1,5 +1,6 @@
 import Foundation
 import CoreBluetooth
+import WhoopProtocol
 
 /// Durable append-only log of WHOOP 5.0/MG EVENT (type 48 / 0x30) frames, for deep-data protocol
 /// research (#103).
@@ -64,8 +65,16 @@ final class PuffinEventLog {
         // UserDefaults read, so the cost for an ordinary frame stays a single length+byte compare.
         guard !disabled, Self.isEventFrame(frame), isEnabled else { return }
         let tsMs = Int(Date().timeIntervalSince1970 * 1000)
-        let hex = frame.map { String(format: "%02x", $0) }.joined()
-        let line = "{\"ts_ms\":\(tsMs),\"char\":\"\(char.uuidString.lowercased())\",\"hex\":\"\(hex)\"}\n"
+        let hex = BatteryPackInfo.redactedHex(frame)
+        let note = LiveChargeDispatch.note(frame: frame, whoop5: true)
+        var extra = ""
+        if let event = note?.event {
+            extra += ",\"charge_event\":\(event)"
+            if let raw = note?.chargeRaw {
+                extra += ",\"charge_raw\":\(raw)"
+            }
+        }
+        let line = "{\"ts_ms\":\(tsMs),\"char\":\"\(char.uuidString.lowercased())\",\"hex\":\"\(hex)\"\(extra)}\n"
         do {
             var h = try openHandle()
             // Rotate a LIVE handle too, not just at open: a long single session (or a first-ever sync

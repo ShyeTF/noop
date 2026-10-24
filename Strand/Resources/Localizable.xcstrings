@@ -5538,7 +5538,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Il reste %@ sur votre WHOOP — rechargez-le ce soir."
+            "value": "Il reste %@ sur votre WHOOP — rechargez-la ce soir."
           }
         },
         "it": {
@@ -15933,7 +15933,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "WHOOP vu avec peu de batterie"
+            "value": "WHOOP vue avec peu de batterie"
           }
         },
         "it": {
@@ -47951,7 +47951,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La charge, l'effort et le repos sont calculés sur votre propre appareil à partir des données de votre bracelet. La charge a besoin d'environ quatre nuits de sommeil pour apprendre votre référence (c'est la « Calibration », comptée en nuits sur 4 sur l'anneau), et continue de s'affiner pendant vos premières semaines. Sur un WHOOP 5 ou MG, le bracelet conserve peu d'historique, donc ce compteur peut rester à 0 sur 4 tant que vous ne l'avez pas porté pendant quelques nuits. C'est la limite de synchronisation du bracelet, pas un défaut. Avant qu'il y ait un chiffre, NOOP montre ce qu'il peut sans en inventer un."
+            "value": "La charge, l'effort et le repos sont calculés sur votre propre appareil à partir des données de votre bracelet. La charge a besoin d'environ quatre nuits de sommeil pour apprendre votre référence (c'est la « Calibration », comptée en nuits sur 4 sur l'anneau), et continue de s'affiner pendant vos premières semaines. Sur une WHOOP 5 ou MG, le bracelet conserve peu d'historique, donc ce compteur peut rester à 0 sur 4 tant que vous ne l'avez pas porté pendant quelques nuits. C'est la limite de synchronisation du bracelet, pas un défaut. Avant qu'il y ait un chiffre, NOOP montre ce qu'il peut sans en inventer un."
           }
         },
         "it": {
@@ -52538,7 +52538,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connectez un WHOOP, un bracelet de fréquence cardiaque ou une machine de gym et regardez chaque battement en temps réel : fréquence cardiaque, variabilité et zones au fur et à mesure. Vous avez déjà un historique ailleurs ? Importez-le depuis WHOOP, Apple Santé, Oura, Fitbit ou Garmin."
+            "value": "Connectez une WHOOP, un bracelet de fréquence cardiaque ou une machine de gym et regardez chaque battement en temps réel : fréquence cardiaque, variabilité et zones au fur et à mesure. Vous avez déjà un historique ailleurs ? Importez-le depuis WHOOP, Apple Santé, Oura, Fitbit ou Garmin."
           }
         },
         "it": {
@@ -56539,7 +56539,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Impulsions du compteur par pas. Laissez à 1,0 sauf si vos pas sont très élevés. Sur un WHOOP 5/MG, ils peuvent être très élevés (10× ou plus), donc ceci va jusqu'à 30. Marchez un nombre connu de 1 000 pas et divisez le comptage de NOOP par le comptage réel pour obtenir votre valeur."
+            "value": "Impulsions du compteur par pas. Laissez à 1,0 sauf si vos pas sont très élevés. Sur une WHOOP 5/MG, ils peuvent être très élevés (10× ou plus), donc ceci va jusqu'à 30. Marchez un nombre connu de 1 000 pas et divisez le comptage de NOOP par le comptage réel pour obtenir votre valeur."
           }
         },
         "it": {
@@ -69753,7 +69753,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Modèle exact inconnu. Montre ce que tout WHOOP peut faire. * estimation sur l'appareil · pas de % de SpO₂ depuis le bracelet (importez un CSV WHOOP pour cela)."
+            "value": "Modèle exact inconnu. Montre ce que toute WHOOP peut faire. * estimation sur l'appareil · pas de % de SpO₂ depuis le bracelet (importez un CSV WHOOP pour cela)."
           }
         },
         "it": {
@@ -73894,7 +73894,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pour un WHOOP 4.0, qui n'envoie pas de nombre de pas : NOOP estime les pas à partir du mouvement, calibré sur votre téléphone. Touchez pour voir à quel point c'est proche et l'ajuster."
+            "value": "Pour une WHOOP 4.0, qui n'envoie pas de nombre de pas : NOOP estime les pas à partir du mouvement, calibré sur votre téléphone. Touchez pour voir à quel point c'est proche et l'ajuster."
           }
         },
         "it": {
@@ -95181,7 +95181,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La fréquence cardiaque en direct fonctionne déjà sur un bracelet WHOOP 5/MG. Ces sondes vont plus loin et essaient d'en extraire davantage. Ce sont des estimations, désactivées par défaut, et elles ne touchent jamais qu'un bracelet 5/MG, le WHOOP 4.0 n'est jamais affecté."
+            "value": "La fréquence cardiaque en direct fonctionne déjà sur un bracelet WHOOP 5/MG. Ces sondes vont plus loin et essaient d'en extraire davantage. Ce sont des estimations, désactivées par défaut, et elles ne touchent jamais qu'un bracelet 5/MG, la WHOOP 4.0 n'est jamais affectée."
           }
         },
         "it": {
@@ -95239,7 +95239,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La fréquence cardiaque en direct fonctionne déjà sur un bracelet WHOOP 5/MG. Ces sondes vont plus loin et tentent d'en tirer davantage. Ce sont des suppositions, désactivées par défaut, et elles ne touchent jamais qu'un bracelet 5/MG. Le WHOOP 4.0 n'est jamais concerné."
+            "value": "La fréquence cardiaque en direct fonctionne déjà sur un bracelet WHOOP 5/MG. Ces sondes vont plus loin et tentent d'en tirer davantage. Ce sont des suppositions, désactivées par défaut, et elles ne touchent jamais qu'un bracelet 5/MG. La WHOOP 4.0 n'est jamais concernée."
           }
         },
         "it": {
@@ -99352,7 +99352,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Assurez-vous qu'il n'est PAS connecté à l'app officielle WHOOP en ce moment."
+            "value": "Assurez-vous qu'elle n'est PAS connectée à l'app officielle WHOOP en ce moment."
           }
         },
         "it": {
@@ -104109,7 +104109,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mon WHOOP"
+            "value": "Ma WHOOP"
           }
         },
         "it": {
@@ -104881,7 +104881,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "NOOP estime vos pas à partir du mouvement de votre WHOOP, calibré sur le nombre de pas de votre téléphone. C'est une estimation, pas un podomètre. Un WHOOP 4.0 ne transmet pas de pas."
+            "value": "NOOP estime vos pas à partir du mouvement de votre WHOOP, calibré sur le nombre de pas de votre téléphone. C'est une estimation, pas un podomètre. Une WHOOP 4.0 ne transmet pas de pas."
           }
         },
         "it": {
@@ -117666,7 +117666,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sur une connexion 5/MG, NOOP enverra une requête de flux temps réel puffin après la poignée de main et journalisera ce qui revient. Si vous avez un bracelet 5/MG, activer ceci et partager votre journal de bracelet aide à cartographier le protocole. Aucun effet sur le WHOOP 4.0."
+            "value": "Sur une connexion 5/MG, NOOP enverra une requête de flux temps réel puffin après la poignée de main et journalisera ce qui revient. Si vous avez un bracelet 5/MG, activer ceci et partager votre journal de bracelet aide à cartographier le protocole. Aucun effet sur la WHOOP 4.0."
           }
         },
         "it": {
@@ -127102,7 +127102,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mettez votre WHOOP 4.0 à votre poignet et assurez-vous qu'il est activé."
+            "value": "Mettez votre WHOOP 4.0 à votre poignet et assurez-vous qu'elle est activée."
           }
         },
         "it": {
@@ -163001,7 +163001,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Le WHOOP MG possède des électrodes ECG dans son fermoir. Cela débloque, sur l'écran « Appareils », une sonde restreinte et lancée à la main qui demande au bracelet de démarrer son sous-système ECG et journalise tout ce qui revient. MG uniquement — un WHOOP 5.0 ordinaire n'a pas d'électrodes, et NOOP refusera d'envoyer si votre bracelet ne s'identifie pas comme un MG. Personne n'a confirmé qu'un bracelet honore ces commandes, il se peut donc qu'il ne se passe rien. Activez d'abord « Enregistrer les trames puffin dans un fichier » ci-dessous si vous voulez une capture complète au niveau des octets à partager."
+            "value": "La WHOOP MG possède des électrodes ECG dans son fermoir. Cela débloque, sur l'écran « Appareils », une sonde restreinte et lancée à la main qui demande au bracelet de démarrer son sous-système ECG et journalise tout ce qui revient. MG uniquement — une WHOOP 5.0 ordinaire n'a pas d'électrodes, et NOOP refusera d'envoyer si votre bracelet ne s'identifie pas comme un MG. Personne n'a confirmé qu'un bracelet honore ces commandes, il se peut donc qu'il ne se passe rien. Activez d'abord « Enregistrer les trames puffin dans un fichier » ci-dessous si vous voulez une capture complète au niveau des octets à partager."
           }
         },
         "it": {
@@ -174212,7 +174212,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "WHOOP 4.0 est testé et fonctionne de bout en bout. WHOOP 5.0/MG est plus récent : la fréquence cardiaque en direct fonctionne dès aujourd'hui, mais les métriques plus poussées (récupération, effort, sommeil) pour le 5/MG sont encore en cours de résolution. NOOP vous indique toujours ce qui est actif et ce qui est encore en construction."
+            "value": "WHOOP 4.0 est testée et fonctionne de bout en bout. WHOOP 5.0/MG est plus récente : la fréquence cardiaque en direct fonctionne dès aujourd'hui, mais les métriques plus poussées (récupération, effort, sommeil) pour le 5/MG sont encore en cours de résolution. NOOP vous indique toujours ce qui est actif et ce qui est encore en construction."
           }
         },
         "it": {
@@ -174554,7 +174554,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Le WHOOP 5.0 / MG se lie à un seul appareil à la fois. Dissociez-le d'abord de l'application officielle WHOOP."
+            "value": "La WHOOP 5.0 / MG se lie à un seul appareil à la fois. Dissociez-la d'abord de l'application officielle WHOOP."
           }
         },
         "it": {
@@ -174612,7 +174612,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La prise en charge du WHOOP 5.0 / MG est plus récente et encore expérimentale dans NOOP."
+            "value": "La prise en charge de la WHOOP 5.0 / MG est plus récente et encore expérimentale dans NOOP."
           }
         },
         "it": {
@@ -174728,7 +174728,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Le WHOOP 5.0/MG s'associe à une seule application à la fois. Si un scan ne trouve rien, dissociez-le dans l'application officielle WHOOP et fermez complètement cette application, puis relancez le scan."
+            "value": "La WHOOP 5.0/MG s'associe à une seule application à la fois. Si un scan ne trouve rien, dissociez-la dans l'application officielle WHOOP et fermez complètement cette application, puis relancez le scan."
           }
         },
         "it": {
@@ -174786,7 +174786,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Le WHOOP 5.0/MG s'associe à une seule application à la fois. Si rien n'est trouvé, dissociez-le dans l'application officielle WHOOP et fermez complètement cette application, puis lancez Scanner."
+            "value": "La WHOOP 5.0/MG s'associe à une seule application à la fois. Si rien n'est trouvé, dissociez-la dans l'application officielle WHOOP et fermez complètement cette application, puis lancez Scanner."
           }
         },
         "it": {
@@ -215836,7 +215836,7 @@
     "5/MG RAW DATA COLLECTOR": {"shouldTranslate":false,"localizations":{"de":{"stringUnit":{"state":"translated","value":"5/MG-ROHDATEN-COLLECTOR"}},"es":{"stringUnit":{"state":"translated","value":"RECOPILADOR DE DATOS 5/MG"}},"fr":{"stringUnit":{"state":"translated","value":"COLLECTEUR DE DONNÉES 5/MG"}},"pt-PT":{"stringUnit":{"state":"translated","value":"RECOLHA DE DADOS 5/MG"}},"it":{"stringUnit":{"state":"translated","value":"RACCOGLITORE DATI GREZZI 5/MG"}},"pl":{"stringUnit":{"state":"translated","value":"KOLEKTOR DANYCH SUROWYCH 5/MG"}},"ru":{"stringUnit":{"state":"translated","value":"СБОРЩИК СЫРЫХ ДАННЫХ 5/MG"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"5/MG 原始数据采集器"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"5/MG 原始資料收集器"}}}},
     "Record, review, export, and delete bounded 100 Hz motion sessions. Normal sync is unchanged.": {"shouldTranslate":false,"localizations":{"de":{"stringUnit":{"state":"translated","value":"Begrenzte 100-Hz-Sessions aufnehmen, prüfen, exportieren und löschen. Normale Synchronisierung bleibt unverändert."}},"es":{"stringUnit":{"state":"translated","value":"Graba, revisa, exporta y elimina sesiones limitadas a 100 Hz. La sincronización normal no cambia."}},"fr":{"stringUnit":{"state":"translated","value":"Enregistrez, consultez, exportez et supprimez des sessions limitées à 100 Hz. La synchronisation normale ne change pas."}},"pt-PT":{"stringUnit":{"state":"translated","value":"Grave, reveja, exporte e elimine sessões limitadas a 100 Hz. A sincronização normal não muda."}},"it":{"stringUnit":{"state":"translated","value":"Registra, esamina, esporta ed elimina sessioni di movimento a 100 Hz delimitate. La sincronizzazione normale non cambia."}},"pl":{"stringUnit":{"state":"translated","value":"Nagrywaj, przeglądaj, eksportuj i usuwaj ograniczone sesje ruchu 100 Hz. Zwykła synchronizacja pozostaje bez zmian."}},"ru":{"stringUnit":{"state":"translated","value":"Записывайте, просматривайте, экспортируйте и удаляйте ограниченные сессии движения 100 Гц. Обычная синхронизация не меняется."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"记录、查看、导出和删除有时长限制的 100 Hz 运动会话。正常同步不受影响。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"記錄、檢視、匯出並刪除有時長限制的 100 Hz 運動工作階段。正常同步不受影響。"}}}},
     "Open raw-data collector": {"shouldTranslate":false,"localizations":{"de":{"stringUnit":{"state":"translated","value":"Rohdaten-Collector öffnen"}},"es":{"stringUnit":{"state":"translated","value":"Abrir recopilador de datos"}},"fr":{"stringUnit":{"state":"translated","value":"Ouvrir le collecteur de données"}},"pt-PT":{"stringUnit":{"state":"translated","value":"Abrir recolha de dados"}},"it":{"stringUnit":{"state":"translated","value":"Apri il raccoglitore dati grezzi"}},"pl":{"stringUnit":{"state":"translated","value":"Otwórz kolektor danych surowych"}},"ru":{"stringUnit":{"state":"translated","value":"Открыть сборщик сырых данных"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"打开原始数据采集器"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"開啟原始資料收集器"}}}},
-    "WHOOP 5/MG connected.": {"shouldTranslate":false,"localizations":{"de":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG verbunden."}},"es":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG conectado."}},"fr":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG connecté."}},"pt-PT":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG ligado."}},"it":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG collegato."}},"pl":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG połączony."}},"ru":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG подключён."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG 已连接。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG 已連接。"}}}},
+    "WHOOP 5/MG connected.": {"shouldTranslate":false,"localizations":{"de":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG verbunden."}},"es":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG conectado."}},"fr":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG connectée."}},"pt-PT":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG ligado."}},"it":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG collegato."}},"pl":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG połączony."}},"ru":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG подключён."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG 已连接。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"WHOOP 5/MG 已連接。"}}}},
     "Connect your WHOOP 5/MG to start a capture.": {"shouldTranslate":false,"localizations":{"de":{"stringUnit":{"state":"translated","value":"Verbinde dein WHOOP 5/MG, um eine Aufnahme zu starten."}},"es":{"stringUnit":{"state":"translated","value":"Conecta tu WHOOP 5/MG para iniciar una captura."}},"fr":{"stringUnit":{"state":"translated","value":"Connectez votre WHOOP 5/MG pour lancer une capture."}},"pt-PT":{"stringUnit":{"state":"translated","value":"Ligue o WHOOP 5/MG para iniciar uma captura."}},"it":{"stringUnit":{"state":"translated","value":"Collega il tuo WHOOP 5/MG per avviare un'acquisizione."}},"pl":{"stringUnit":{"state":"translated","value":"Połącz WHOOP 5/MG, aby rozpocząć nagrywanie."}},"ru":{"stringUnit":{"state":"translated","value":"Подключите WHOOP 5/MG, чтобы начать запись."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"连接你的 WHOOP 5/MG 以开始采集。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"連接你的 WHOOP 5/MG 以開始擷取。"}}}},
     "5/MG PROTOCOL DIAGNOSTICS": {"shouldTranslate":false,"localizations":{"de":{"stringUnit":{"state":"translated","value":"5/MG-PROTOKOLLDIAGNOSE"}},"es":{"stringUnit":{"state":"translated","value":"DIAGNÓSTICO DEL PROTOCOLO 5/MG"}},"fr":{"stringUnit":{"state":"translated","value":"DIAGNOSTICS DU PROTOCOLE 5/MG"}},"pt-PT":{"stringUnit":{"state":"translated","value":"DIAGNÓSTICO DO PROTOCOLO 5/MG"}},"it":{"stringUnit":{"state":"translated","value":"DIAGNOSTICA PROTOCOLLO 5/MG"}},"pl":{"stringUnit":{"state":"translated","value":"DIAGNOSTYKA PROTOKOŁU 5/MG"}},"ru":{"stringUnit":{"state":"translated","value":"ДИАГНОСТИКА ПРОТОКОЛА 5/MG"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"5/MG 协议诊断"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"5/MG 協定診斷"}}}},
     "Developer tools for unmapped protocol features. None of these are required for normal WHOOP 5/MG recording, history sync, or the bounded Raw Data Collector.": {"shouldTranslate":false,"localizations":{"de":{"stringUnit":{"state":"translated","value":"Entwicklerwerkzeuge für nicht zugeordnete Protokollfunktionen. Für normale Aufnahme, Verlauf und Rohdaten-Collector nicht erforderlich."}},"es":{"stringUnit":{"state":"translated","value":"Herramientas para funciones de protocolo sin asignar. No son necesarias para el uso normal."}},"fr":{"stringUnit":{"state":"translated","value":"Outils pour les fonctions de protocole non identifiées. Ils ne sont pas requis pour l’usage normal."}},"pt-PT":{"stringUnit":{"state":"translated","value":"Ferramentas para funções de protocolo não identificadas. Não são necessárias para o uso normal."}},"it":{"stringUnit":{"state":"translated","value":"Strumenti per sviluppatori per funzioni di protocollo non mappate. Nessuno è necessario per la normale registrazione WHOOP 5/MG, la sincronizzazione della cronologia o il Raccoglitore dati grezzi."}},"pl":{"stringUnit":{"state":"translated","value":"Narzędzia deweloperskie do niezmapowanych funkcji protokołu. Żadne z nich nie są wymagane do zwykłego nagrywania WHOOP 5/MG, synchronizacji historii ani Kolektora danych surowych."}},"ru":{"stringUnit":{"state":"translated","value":"Инструменты разработчика для неразобранных функций протокола. Ничего из этого не требуется для обычной записи WHOOP 5/MG, синхронизации истории или Сборщика сырых данных."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"用于未映射协议功能的开发者工具。正常的 WHOOP 5/MG 记录、历史同步和原始数据采集器都不需要这些。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"用於未對應協定功能的開發者工具。正常的 WHOOP 5/MG 記錄、歷史同步與原始資料收集器都不需要這些。"}}}},

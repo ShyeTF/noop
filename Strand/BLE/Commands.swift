@@ -281,13 +281,8 @@ public enum WhoopCommand: UInt8, CaseIterable {
     /// verification. That's one device/firmware, so the UI keeps a "keep a backup alarm" caveat for
     /// anything critical. Do NOT guess additional fields beyond the captured frame.
     public static func setAlarmPayload(epochSec: UInt32) -> [UInt8] {
-        [0x01,
-         UInt8(epochSec & 0xFF),
-         UInt8((epochSec >> 8) & 0xFF),
-         UInt8((epochSec >> 16) & 0xFF),
-         UInt8((epochSec >> 24) & 0xFF),
-         0x00, 0x00, // subseconds (always 0 — minute precision)
-         0x00, 0x00] // haptic-mode field (from @ujix's official-app wire capture, #535)
+        // Canonical encoder lives in WhoopProtocol so Linux tests pin the LE layout.
+        AlarmPayload.setAlarmRev1(epochSec: epochSec)
     }
 
     /// Max UTF-8 byte length for a strap advertising name. BLE caps the whole advertising payload at

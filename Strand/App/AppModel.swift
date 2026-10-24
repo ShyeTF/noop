@@ -417,8 +417,12 @@ final class AppModel: ObservableObject {
         // trailing edge, so the dashboard still refreshes with the newly-synced data , freshness is kept,
         // we just stop re-doing it dozens of times mid-download. removeDuplicates() still drops a slice that
         // stamped an identical second; the trailing refresh after a real change is never dropped.
-        live.$lastSyncedAt
-            .dropFirst()
+        // `lastBankedAt` joins the same debounce: a pass that stored rows publishes it on every
+        // end reason, including the idle timeout a 4.0 uses instead of HISTORY_COMPLETE.
+        Publishers.Merge(
+            live.$lastSyncedAt.dropFirst(),
+            live.$lastBankedAt.dropFirst()
+        )
             .compactMap { $0 }
             .removeDuplicates()
             .debounce(for: .seconds(2), scheduler: DispatchQueue.main)
@@ -499,6 +503,11 @@ final class AppModel: ObservableObject {
             // the 0–100 axis. Guarded by a persisted flag, so this is a no-op on every subsequent launch.
             await self.intelligence.runEffortRescoreIfNeeded()
             while !Task.isCancelled {
+                if WhoopEnergyRuntime.skipsHeavyMaintenance(
+                    isBackground: RescoreBackgroundScheduler.isBackgrounded) {
+                    try? await Task.sleep(nanoseconds: 1_800_000_000_000)
+                    continue
+                }
                 // #547 RE-POLLUTION: a sync since the last tick may have armed a re-heal (its ingest gate
                 // dropped bad-clock records). `runTimestampHealIfNeeded` honours the pending flag even after
                 // the one-shot done flag is set, purges any pollution, and rescores the affected days , so a
@@ -524,15 +533,24 @@ final class AppModel: ObservableObject {
                 // `live = self.live` spelled out: this is nested inside the cadence `Task`, which
                 // requires explicit `self`, so the bare-name capture shorthand used elsewhere in this
                 // type would not resolve here.
-                await RescoreBackgroundScheduler.run(owesOnDefer: false,
-                                                     log: { [live = self.live] line in
-                                                         live.append(log: line)
-                                                     }) {
-                    await self.intelligence.analyzeRecent(force: false)
+                let paused = WhoopEnergyRuntime.heavyWorkPaused
+                let blockBackground = WhoopEnergyRuntime.blockBackgroundAnalysis
+                if WhoopEnergyRuntime.skipsHeavyMaintenance(
+                    isBackground: RescoreBackgroundScheduler.isBackgrounded) {
+                    // Serious heat, Low Power while locked, or Nutry in the background: skip the backstop and refreshV5Signals.
+                } else {
+                    await RescoreBackgroundScheduler.run(owesOnDefer: false,
+                                                         heavyWorkPaused: paused,
+                                                         blockBackgroundAnalysis: blockBackground,
+                                                         log: { [live = self.live] line in
+                                                             live.append(log: line)
+                                                         }) {
+                        await self.intelligence.analyzeRecent(force: false)
+                    }
+                    // v5: recompute the skin-temp suite snapshots (cycle phase + body clock) from the
+                    // freshly-scored history so the Health hub cards read a ready result.
+                    await self.refreshV5Signals()
                 }
-                // v5: recompute the skin-temp suite snapshots (cycle phase + body clock) from the
-                // freshly-scored history so the Health hub cards read a ready result.
-                await self.refreshV5Signals()
                 // #836 battery: 30-min BACKSTOP cadence (twin of Android ANALYZE_INTERVAL_MS). The
                 // `force: false` gate above can't skip while the strap streams live HR — the fingerprint
                 // advances every second — so this re-scored the whole 21-day window every 15 min even though
@@ -714,9 +732,18 @@ final class AppModel: ObservableObject {
     /// Forced rather than `skipIfUnchanged`: an interrupted pass never advanced the watermark — by design,
     /// so that it cannot mark unscored data as scored — so gating on the fingerprint here would be asking
     /// a question whose answer is already known to be "yes, there is work".
+    /// Set synchronously, before the first `await`, so a second foreground entry cannot start another pass.
+    private var deferredRescoreInFlight = false
+
     func runDeferredRescoreIfOwed() async {
         // A pass already running here holds the owed mark itself and settles it when it finishes; forcing
         // another would only queue a second full pass behind it.
+        guard RescoreBackgroundScheduler.isRescoreOwed, !intelligence.computing else { return }
+        guard deferredRescoreInFlight == false else { return }
+        deferredRescoreInFlight = true
+        defer { deferredRescoreInFlight = false }
+        // The caller yields once so the first frame can commit. Yield again before the 120-day read.
+        await Task.yield()
         guard RescoreBackgroundScheduler.isRescoreOwed, !intelligence.computing else { return }
         // #2238: force only when the debt is UNPROVEN — an interrupted pass, whose watermark was
         // deliberately never advanced. A pass that COMPLETED and was merely outvoted by a token recorded
@@ -729,6 +756,8 @@ final class AppModel: ObservableObject {
         let fromCompletedPass = RescoreBackgroundScheduler.isOwedAfterCompletedPass
         live.append(log: "re-score: resuming a pass an earlier attempt could not finish (#1538)"
                     + (fromCompletedPass ? " — debt is from a completed pass, gating on the fingerprint (#2238)" : ""))
+        deferredSurfaceRefresh = false
+        await repo.refresh(days: 120)
         await intelligence.analyzeRecent(skipIfUnchanged: fromCompletedPass,
                                          triggerLabel: fromCompletedPass ? "resume-gated" : "resume-forced")
         #if os(iOS)
@@ -743,9 +772,28 @@ final class AppModel: ObservableObject {
         #endif
     }
 
+    /// Cache, widget and Health writes skipped while a banked pass finishes in the background.
+    private var deferredSurfaceRefresh = false
+
+    /// Foreground catch-up when the banked pass already scored and left no rescore debt.
+    func surfaceBankedRefreshIfNeeded() async {
+        guard deferredSurfaceRefresh else { return }
+        deferredSurfaceRefresh = false
+        await repo.refresh(days: 120)
+        #if os(iOS)
+        await WidgetSnapshot.publish(from: self)
+        await healthWriteBack?()
+        #endif
+    }
+
     private func refreshAfterCompletedBackfill() async {
         live.append(log: "Backfill: refreshing dashboard cache from completed sync")
-        await repo.refresh(days: 120)
+        let backgrounded = RescoreBackgroundScheduler.isBackgrounded
+        if backgrounded {
+            deferredSurfaceRefresh = true
+        } else {
+            await repo.refresh(days: 120)
+        }
         // Score the freshly-offloaded raw data RIGHT NOW rather than waiting for the next 15-minute
         // analyzeRecent tick , otherwise a just-synced night's Charge / Effort / Rest can take up to
         // 15 minutes to appear on a strap-only (no-import) dashboard. analyzeRecent no-ops if a tick is
@@ -762,11 +810,21 @@ final class AppModel: ObservableObject {
         // the #1538 report while never producing a score. Decide first whether this pass can finish here,
         // and hand it to a background-processing task when it cannot. A no-op on macOS, and on iOS a
         // foreground pass is never deferred.
-        await RescoreBackgroundScheduler.run(passInProgress: intelligence.computing,
-                                             log: { [live] line in live.append(log: line) }) {
-            await intelligence.analyzeRecent(skipIfUnchanged: true)
+        let paused = WhoopEnergyRuntime.heavyWorkPaused
+        let blockBackground = WhoopEnergyRuntime.blockBackgroundAnalysis
+        if WhoopEnergyRuntime.skipsHeavyMaintenance(isBackground: RescoreBackgroundScheduler.isBackgrounded) {
+            // The offload is already stored. Scoring waits until Nutry is open and the phone is cool.
+            // Existing owed keys: the next foreground open runs `runDeferredRescoreIfOwed`.
+            _ = RescoreBackgroundScheduler.markRescoreOwed()
+        } else {
+            await RescoreBackgroundScheduler.run(passInProgress: intelligence.computing,
+                                                 heavyWorkPaused: paused,
+                                                 blockBackgroundAnalysis: blockBackground,
+                                                 log: { [live] line in live.append(log: line) }) {
+                await intelligence.analyzeRecent(skipIfUnchanged: true)
+            }
+            await refreshV5Signals()
         }
-        await refreshV5Signals()
         #if os(iOS)
         // #980: a strap backfill routinely completes while the app is BACKGROUNDED (it runs as a
         // bluetooth-central, so it stays alive to receive the offload). The only other widget-publish
@@ -774,12 +832,16 @@ final class AppModel: ObservableObject {
         // never rewrite the shared App-Group snapshot or call WidgetCenter.reloadAllTimelines — the
         // widget kept showing yesterday's numbers. Publishing here, on the real "new data landed"
         // signal, pushes the fresh snapshot to the home-screen widget without needing a foreground.
-        await WidgetSnapshot.publish(from: self)
-        // #1021: same reasoning as the widget publish above, for Apple Health. The only automatic
-        // write-back ran on scenePhase == .active, in the same block that KICKS this offload - so it
-        // raced the data it was meant to publish and last night's sleep reached Health an app-open late.
-        // Set by StrandiOSApp; nil on macOS and in tests, where there is no bridge.
-        await healthWriteBack?()
+        // A background pass defers this publish, the 120-day refresh and the Health write. The next
+        // foreground open runs them from `runDeferredRescoreIfOwed` or `surfaceBankedRefreshIfNeeded`.
+        if backgrounded == false {
+            await WidgetSnapshot.publish(from: self)
+            // #1021: same reasoning as the widget publish above, for Apple Health. The only automatic
+            // write-back ran on scenePhase == .active, in the same block that KICKS this offload - so it
+            // raced the data it was meant to publish and last night's sleep reached Health an app-open late.
+            // Set by StrandiOSApp; nil on macOS and in tests, where there is no bridge.
+            await healthWriteBack?()
+        }
         #endif
     }
 
@@ -1245,6 +1307,15 @@ final class AppModel: ObservableObject {
     /// hasn't been wired yet (pre store-open) , the wizard is only reachable once it has.
     func registerDevice(_ device: PairedDevice, makeActive: Bool) {
         guard let registry = deviceRegistry else { return }
+        // #221: `finishAdd` is the ONLY caller, and it runs after the user picked a device out of the
+        // wizard's list and confirmed the name. A WHOOP registered with its own Bluetooth identity is
+        // therefore a MANUAL pairing — record it on the gate so the engine may reach that strap, and only
+        // that strap. Without this the row would exist while every connect path still (correctly) refused.
+        if SourceIdentity.isWhoop(device),
+           let pid = device.peripheralId?.trimmingCharacters(in: .whitespacesAndNewlines), !pid.isEmpty {
+            NutryWhoopPairingGate.pairManually(
+                peripheralUUID: pid, name: device.nickname ?? device.model, serialSuffix: nil)
+        }
         registry.add(device)
         if makeActive {
             // `setActive` republishes `registry.$activeDeviceId`, which the read-spine subscription

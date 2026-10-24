@@ -319,11 +319,11 @@ extension WhoopStore {
             // stores SQL NULL, so an absent channel stays absent.
             if !streams.skinTemp.isEmpty {
                 let stmt = try db.cachedStatement(sql: """
-                    INSERT INTO skinTempSample (deviceId, ts, raw, aux1Raw, aux2Raw) VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO skinTempSample (deviceId, ts, raw, aux1Raw, aux2Raw, layoutVersion) VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(deviceId, ts) DO NOTHING
                     """)
                 for s in streams.skinTemp {
-                    try stmt.execute(arguments: [deviceId, s.ts, s.raw, s.aux1Raw, s.aux2Raw])
+                    try stmt.execute(arguments: [deviceId, s.ts, s.raw, s.aux1Raw, s.aux2Raw, s.layoutVersion])
                     skin += db.changesCount
                 }
             }

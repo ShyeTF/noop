@@ -281,7 +281,7 @@ struct MarkerEditorView: View {
             .background(StrandPalette.surfaceInset, in: inputShape)
             .overlay(inputShape.strokeBorder(StrandPalette.hairline, lineWidth: 1))
             if unitOptions.count > 1 {
-                Text("Stored as \(MarkerUnits.canonicalUnit(for: markerKey, fallback: unit)). \(conversionNote)")
+                Text(String(localized: "Stored as \(MarkerUnits.canonicalUnit(for: markerKey, fallback: unit)). \(conversionNote)"))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }
@@ -325,7 +325,7 @@ struct MarkerEditorView: View {
     // MARK: - Disclaimer + footer
 
     private var disclaimerNote: some View {
-        Text("Lab Book keeps your own numbers. It doesn't test, read, or judge them, and it's not medical advice. Everything stays on \(Platform.deviceNounPhrase).")
+        Text(String(localized: "Lab Book keeps your own numbers. It doesn't test, read, or judge them, and it's not medical advice. Everything stays on \(Platform.deviceNounPhrase)."))
             .font(StrandFont.footnote)
             .foregroundStyle(StrandPalette.textTertiary)
             .fixedSize(horizontal: false, vertical: true)

@@ -201,10 +201,34 @@ public struct SkinTempSample: Equatable, Codable {
     public let aux1Raw: Int?
     /// `temp_aux_2_raw@71`, signed i16; °C = value/10. nil when absent/out of gate.
     public let aux2Raw: Int?
+    /// HISTORICAL_DATA layout (`hist_version`). On a 5/MG that byte is frame[9] (v18);
+    /// on a 4.0 it is frame[5] (v24). nil on rows banked before it was stored.
+    /// v18 is 5/MG centidegrees; v24 is a WHOOP 4.0 ADC. The raw column is never rewritten.
+    public let layoutVersion: Int?
     public init(ts: Int, raw: Int, unit: String = "raw_adc",
-                aux1Raw: Int? = nil, aux2Raw: Int? = nil) {
+                aux1Raw: Int? = nil, aux2Raw: Int? = nil, layoutVersion: Int? = nil) {
         self.ts = ts; self.raw = raw; self.unit = unit
         self.aux1Raw = aux1Raw; self.aux2Raw = aux2Raw
+        self.layoutVersion = layoutVersion
+    }
+}
+
+/// Which scale a skin-temp raw uses. The packet version wins over the registry label.
+public enum SkinTempPacket {
+    /// WHOOP 4.0 HISTORICAL layouts whose skin field is a raw ADC (v24 @72, and the same-layout aliases).
+    public static let whoop4Versions: Set<Int> = [12, 24, 25]
+
+    public static func family(samples: [SkinTempSample], registry: DeviceFamily) -> DeviceFamily {
+        let versions = Set(samples.compactMap(\.layoutVersion))
+        if versions.contains(where: { mappedWhoop5HistoricalVersions.contains($0) }) { return .whoop5 }
+        if versions.contains(where: { whoop4Versions.contains($0) }) { return .whoop4 }
+        if samples.contains(where: { $0.aux1Raw != nil || $0.aux2Raw != nil }) { return .whoop5 }
+        let raws = samples.map(\.raw)
+        // A real 4.0 saturates at 2047. The peg itself must not count, or a saturated night
+        // would be read as centidegrees.
+        let aboveCeiling = raws.filter { $0 > 2047 }.count
+        if raws.isEmpty == false, aboveCeiling * 2 > raws.count { return .whoop5 }
+        return registry
     }
 }
 

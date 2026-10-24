@@ -8,6 +8,17 @@ import WhoopStore
 import StrandAnalytics
 import StrandImport
 
+/// Lecture Santé limitée à l’écran Apple Watch visible. Jamais le pipeline BLE WHOOP.
+struct HealthVisibleReading: Sendable {
+    var heartRate: Int?
+    var heartRateDate: Date?
+    var steps: Int?
+    var activeKcal: Double?
+    var restingHeartRate: Int?
+    var averageHRV: Double?
+    var maxHeartRate: Int?
+}
+
 /// Two-way Apple Health bridge for the iOS app.
 ///
 /// iOS has HealthKit (macOS does not), so the iOS target can do far more than parse a static export:
@@ -363,6 +374,112 @@ final class HealthKitBridge: ObservableObject {
     /// hook in `StrandiOSApp` to call — no other file is edited.
     func foregroundCatchUp() async {
         await sync(days: 7)
+    }
+
+    /// Push des nouveaux échantillons de FC tant que l’écran Apple Watch est visible.
+    /// Distinct des observers horaires : pas de synchro 30 jours, pas d’écriture Santé.
+    private var visibleHeartQuery: HKAnchoredObjectQuery?
+    private var visibleHeartListener: ((Int, Date) -> Void)?
+
+    func beginVisibleHeartUpdates(onSample: @escaping (Int, Date) -> Void) {
+        endVisibleHeartUpdates()
+        visibleHeartListener = onSample
+        refreshAuthIfPreviouslyGranted()
+        guard auth == .authorized,
+              let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return }
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            HKQuery.predicateForSamples(withStart: Date(), end: nil, options: .strictStartDate),
+            Self.notNoopAuthored,
+        ])
+        let query = HKAnchoredObjectQuery(
+            type: type, predicate: predicate, anchor: nil, limit: HKObjectQueryNoLimit
+        ) { [weak self] _, samples, _, _, _ in
+            guard let latest = Self.latestHeartSample(in: samples) else { return }
+            Task { @MainActor in
+                self?.visibleHeartListener?(latest.bpm, latest.date)
+            }
+        }
+        query.updateHandler = { [weak self] _, samples, _, _, _ in
+            guard let latest = Self.latestHeartSample(in: samples) else { return }
+            Task { @MainActor in
+                self?.visibleHeartListener?(latest.bpm, latest.date)
+            }
+        }
+        store.execute(query)
+        visibleHeartQuery = query
+    }
+
+    func endVisibleHeartUpdates() {
+        if let visibleHeartQuery { store.stop(visibleHeartQuery) }
+        visibleHeartQuery = nil
+        visibleHeartListener = nil
+    }
+
+    // Pure read of the newest heart-rate sample. `nonisolated` so HealthKit's query
+    // callbacks — including `HKAnchoredObjectQuery.updateHandler`, which is `@Sendable`
+    // and runs on a background queue — can call it synchronously. The enclosing type is
+    // `@MainActor`, so without this the call is an isolation error and Archive fails.
+    // The helper only reads the samples it is given.
+    nonisolated private static func latestHeartSample(in samples: [HKSample]?) -> (bpm: Int, date: Date)? {
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        guard let sample = (samples ?? []).compactMap({ $0 as? HKQuantitySample }).max(by: { $0.endDate < $1.endDate })
+        else { return nil }
+        let bpm = Int(sample.quantity.doubleValue(for: unit).rounded())
+        guard (30...230).contains(bpm) else { return nil }
+        return (bpm, sample.endDate)
+    }
+
+    /// Lecture courte pour l’écran au premier plan : dernière FC, et agrégats du jour sur demande.
+    func readVisibleMetrics(includeAggregates: Bool) async -> HealthVisibleReading {
+        refreshAuthIfPreviouslyGranted()
+        guard auth == .authorized else { return HealthVisibleReading() }
+        let heart = await latestHeartRateSample()
+        var reading = HealthVisibleReading(heartRate: heart?.bpm, heartRateDate: heart?.date)
+        guard includeAggregates else { return reading }
+        let bpm = HKUnit.count().unitDivided(by: .minute())
+        reading.steps = await todayStatistic(.stepCount, unit: .count(), option: .cumulativeSum).map { Int($0.rounded()) }
+        reading.activeKcal = await todayStatistic(.activeEnergyBurned, unit: .kilocalorie(), option: .cumulativeSum)
+        reading.restingHeartRate = await todayStatistic(.restingHeartRate, unit: bpm, option: .discreteAverage).map { Int($0.rounded()) }
+        reading.averageHRV = await todayStatistic(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), option: .discreteAverage)
+        reading.maxHeartRate = await todayStatistic(.heartRate, unit: bpm, option: .discreteMax).map { Int($0.rounded()) }
+        return reading
+    }
+
+    private func latestHeartRateSample() async -> (bpm: Int, date: Date)? {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return nil }
+        let start = Date().addingTimeInterval(-6 * 60 * 60)
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate),
+            Self.notNoopAuthored,
+        ])
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        return await withCheckedContinuation { cont in
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
+                cont.resume(returning: Self.latestHeartSample(in: samples))
+            }
+            store.execute(query)
+        }
+    }
+
+    private func todayStatistic(
+        _ id: HKQuantityTypeIdentifier, unit: HKUnit, option: HKStatisticsOptions
+    ) async -> Double? {
+        guard let type = HKQuantityType.quantityType(forIdentifier: id) else { return nil }
+        let start = Calendar.current.startOfDay(for: Date())
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate),
+            Self.notNoopAuthored,
+        ])
+        return await withCheckedContinuation { cont in
+            let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: option) { _, stats, _ in
+                let quantity: HKQuantity?
+                if option.contains(.cumulativeSum) { quantity = stats?.sumQuantity() }
+                else if option.contains(.discreteMax) { quantity = stats?.maximumQuantity() }
+                else { quantity = stats?.averageQuantity() }
+                cont.resume(returning: quantity?.doubleValue(for: unit))
+            }
+            store.execute(query)
+        }
     }
 
     /// Drive an incremental sync off an observer wake. We use an `HKAnchoredObjectQuery` per type to

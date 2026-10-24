@@ -277,7 +277,7 @@ struct CoupledView: View {
             .padding(.horizontal, 12).padding(.vertical, 5)
             .background(Capsule(style: .continuous).fill(tint.opacity(0.12)))
             .overlay(Capsule(style: .continuous).stroke(tint.opacity(0.32), lineWidth: 1))
-            .accessibilityLabel("Readiness: \(word)")
+            .accessibilityLabel(String(localized: "Readiness: \(word)"))
     }
 
     /// The readiness level's tint, the SAME mapping TodayView.readinessColor uses.
@@ -428,10 +428,10 @@ struct CoupledView: View {
                         // Right: the slept-vs-needed two-line read + last night's bed–wake span footnote.
                         VStack(alignment: .leading, spacing: 4) {
                             if let asleep = day?.totalSleepMin, asleep > 0 {
-                                Text("\(Self.hoursMinutes(asleep)) slept")
+                                Text(String(localized: "\(Self.hoursMinutes(asleep)) slept"))
                                     .font(StrandFont.headline)
                                     .foregroundStyle(StrandPalette.textPrimary)
-                                Text("\(Self.hoursMinutes(sleepNeedForDay)) needed")
+                                Text(String(localized: "\(Self.hoursMinutes(sleepNeedForDay)) needed"))
                                     .font(StrandFont.subhead)
                                     .foregroundStyle(StrandPalette.textSecondary)
                             } else {
@@ -668,7 +668,7 @@ struct CoupledView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Charge baseline calibrating. \(countdown), \(unlock). \(progress).")
+        .accessibilityLabel(String(localized: "Charge baseline calibrating. \(countdown), \(unlock). \(progress)."))
     }
 
     // MARK: Shared helpers

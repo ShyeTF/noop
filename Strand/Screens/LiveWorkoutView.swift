@@ -265,14 +265,14 @@ struct LiveWorkoutView: View {
                                 .strokeBorder(active ? color : StrandPalette.hairline, lineWidth: 1)
                         )
                         .overlay(
-                            Text("Z\(z)")
+                            Text(String(localized: "Z\(z)"))
                                 .font(StrandFont.captionNumber)
                                 .foregroundStyle(active ? StrandPalette.surfaceBase : StrandPalette.textTertiary)
                         )
                 }
             }
             if let band = zoneSet.zones.first(where: { $0.number == zone }) {
-                Text("Zone \(zone): \(Int(band.lower))-\(Int(band.upper)) bpm (\(Int(band.lowerPct * 100))-\(Int(band.upperPct * 100))% max HR)")
+                Text(String(localized: "Zone \(zone): \(Int(band.lower))-\(Int(band.upper)) bpm (\(Int(band.lowerPct * 100))-\(Int(band.upperPct * 100))% max HR)"))
                     .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
             } else {
                 Text("Warming up. Keep moving to climb into Zone 1.")

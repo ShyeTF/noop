@@ -60,6 +60,10 @@ public enum BatteryPackInfo {
     /// entry for it — it decodes as `0x6D(109)`.
     public static let packInfoEvent = 109
 
+    /// WHOOP 5.0 pack charge edges. A 4.0 never sends 21 or 22.
+    public static let packChargeOnEvent = 21
+    public static let packChargeOffEvent = 22
+
     /// Decode the pack RECORD itself, given the offset of its present-flag byte.
     ///
     /// Split out from `decode` because the same record reaches us by two entirely different transports: as
@@ -99,6 +103,47 @@ public enum BatteryPackInfo {
     /// because the event byte lives in the frame header rather than the record.
     public static func decodeEventFrame(_ frame: [UInt8]) -> Info? {
         decodeRecord(frame, base: whoop5EventPayloadStart + eventRecordBase)
+    }
+
+    /// Hex of a frame with identifiers zeroed.
+    /// Event 109 keeps the charge field when the serial is complete. A shorter 109 is zeroed from the
+    /// Bluetooth address through the end. Events 21 and 22 keep the length, the event id, the timestamp
+    /// and the trailing CRC; the payload is zeroed.
+    public static func redactedHex(_ frame: [UInt8]) -> String {
+        var bytes = frame
+        let eventOff = 10
+        guard bytes.count > eventOff else {
+            return bytes.map { String(format: "%02x", $0) }.joined()
+        }
+        let event = Int(bytes[eventOff])
+        if event == packInfoEvent {
+            maskPackIdentity(&bytes)
+        } else if event == packChargeOnEvent || event == packChargeOffEvent {
+            maskChargePayload(&bytes)
+        }
+        return bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func maskPackIdentity(_ bytes: inout [UInt8]) {
+        let record = whoop5EventPayloadStart + eventRecordBase
+        let address = record + 1
+        let serial = record + 7
+        guard bytes.count > address else { return }
+        if bytes.count >= serial + 16 {
+            for index in address..<(address + 6) { bytes[index] = 0 }
+            for index in serial..<(serial + 16) { bytes[index] = 0 }
+            return
+        }
+        for index in address..<bytes.count { bytes[index] = 0 }
+    }
+
+    private static func maskChargePayload(_ bytes: inout [UInt8]) {
+        let payload = whoop5EventPayloadStart
+        guard bytes.count > payload else { return }
+        let crc = 4
+        let end = bytes.count >= payload + crc ? bytes.count - crc : bytes.count
+        guard end > payload else { return }
+        for index in payload..<end { bytes[index] = 0 }
     }
 
     /// The response-command byte sits at `cmdOff` (10 on WHOOP 5/MG — the only family with a pack; a 4.0's

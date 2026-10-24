@@ -121,9 +121,10 @@ enum StorePaths {
             let src = legacyDir.appendingPathComponent("whoop.sqlite\(suffix)")
             let dst = containerDir.appendingPathComponent("whoop.sqlite\(suffix)")
             guard fm.fileExists(atPath: src.path) else { continue }
-            // Remove any empty/placeholder destination so the move succeeds.
+            // An empty placeholder must move aside, not be deleted, before the legacy store takes its place.
             if fm.fileExists(atPath: dst.path) {
-                try? fm.removeItem(at: dst)
+                let aside = dst.appendingPathExtension("empty-aside")
+                try? fm.moveItem(at: dst, to: aside)
             }
             do {
                 try fm.moveItem(at: src, to: dst)
@@ -157,7 +158,10 @@ enum StorePaths {
             let src = officialDir.appendingPathComponent("whoop.sqlite\(suffix)")
             let dst = stagingDir.appendingPathComponent("whoop.sqlite\(suffix)")
             guard fm.fileExists(atPath: src.path) else { continue }
-            if fm.fileExists(atPath: dst.path) { try? fm.removeItem(at: dst) }
+            if fm.fileExists(atPath: dst.path) {
+                let aside = dst.appendingPathExtension("empty-aside")
+                try? fm.moveItem(at: dst, to: aside)
+            }
             try? fm.copyItem(at: src, to: dst)
         }
     }

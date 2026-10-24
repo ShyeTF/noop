@@ -46,6 +46,8 @@ final class IntelligenceEngine: ObservableObject {
     /// `defer` re-invokes `analyzeRecent(force: true)` ONCE when it clears. A single re-arm (the flag is
     /// cleared BEFORE the re-invoke) bounds it to one extra pass , no recompute storm.
     private var pendingForcedRescore = false
+    /// Set before the first await so a second caller cannot enter while the fingerprint is still loading.
+    private var admissionLocked = false
     /// Uptime the pass holding `computing` started at, and how many days it covers; nil when none is running.
     private var runningPassStart: UInt64?
     private var runningPassDays = 0
@@ -737,7 +739,7 @@ final class IntelligenceEngine: ObservableObject {
         // in-flight pass already covers the same window). But a FORCED call is a real update path (a
         // post-backfill rescore after a sync) , dropping it would leave a freshly-synced night unscored
         // until the next cycle. Re-arm instead: flag it so the running pass's `defer` re-invokes once.
-        guard !computing else {
+        guard !computing, admissionLocked == false else {
             if force {
                 // Said once per running pass, not per trigger: a pass that holds the lock for hours otherwise
                 // turns every post-offload re-score into a silent no-op, and the log shows syncs but no scores.
@@ -749,6 +751,22 @@ final class IntelligenceEngine: ObservableObject {
             }
             return
         }
+        // Take the lock before the first await. Two foreground entries (launch task, then `.active`)
+        // otherwise both pass `!computing` while the store read is suspended.
+        admissionLocked = true
+        var passStarted = false
+        defer {
+            admissionLocked = false
+            if passStarted {
+                computing = false
+                runningPassStart = nil
+            }
+            if pendingForcedRescore {
+                pendingForcedRescore = false
+                Task { await self.analyzeRecent(maxDays: maxDays, force: true) }
+            }
+        }
+        await Task.yield()
         guard let store = await repo.storeHandle() else { note = String(localized: "No on-device store yet."); return }
         guard let hrvCfg = Baselines.metricCfg["hrv"],
               let rhrCfg = Baselines.metricCfg["resting_hr"],
@@ -830,6 +848,7 @@ final class IntelligenceEngine: ObservableObject {
         let reScoreCPUStart = RescoreBackgroundScheduler.processCPUSeconds()
         let reScoreExpiriesAtStart = RescoreBackgroundScheduler.assertionExpiries
         computing = true
+        passStarted = true
         runningPassStart = reScoreStart
         runningPassDays = maxDays
         // #1538: the pass is now past every gate and will do real work. Mark it started durably, so that a
@@ -850,22 +869,9 @@ final class IntelligenceEngine: ObservableObject {
         // Kotlin post-offload gate makes the same point in its own words: "captured before the run,
         // written only on success".
         let owedToken = RescoreBackgroundScheduler.markRescoreOwed(passStarting: true)
-        // #899-A re-arm: clear the lock, then if a forced rescore was dropped while this pass held it,
-        // run it ONCE. The flag is cleared BEFORE the re-invoke (a single re-arm), so a forced call landing
-        // DURING the re-invoke re-arms it again but a quiet one does not , this can never recurse unbounded.
-        // The re-invoke is launched on a fresh `Task` because `defer` is synchronous; by the time it runs
-        // `computing` is already false, so its own `guard !computing` passes and it rescores the new data.
-        defer {
-            computing = false
-            runningPassStart = nil
-            if pendingForcedRescore {
-                pendingForcedRescore = false
-                // Carry THIS pass's window into the re-pass: a heal firing during a wide one-shot pass
-                // must re-score the same width, not the default 21 days (Kotlin re-passes with the same
-                // maxDays; keep the platforms in lockstep).
-                Task { await self.analyzeRecent(maxDays: maxDays, force: true) }
-            }
-        }
+        // #899-A re-arm lives in the defer registered with the lock above. It clears the lock, then if a
+        // forced rescore was dropped while this pass held it, runs it ONCE. The flag is cleared BEFORE the
+        // re-invoke, so a forced call landing DURING the re-invoke re-arms it again but a quiet one does not.
 
         let up = UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm,
                              age: Double(profile.age), sex: profile.sex,
@@ -1297,7 +1303,9 @@ final class IntelligenceEngine: ObservableObject {
                 // register on the right scale (5/MG banks centidegrees, a WHOOP 4.0 v24 banks a raw ADC). The
                 // registry knows each device's model; unknown/non-WHOOP owners fall back to `.whoop5` (the prior
                 // /100 behaviour), so this only changes the mapping for a device positively identified as a 4.0.
-                let skinFamily = Self.skinTempFamily(forOwner: owner, devices: regDevices)
+                let skinFamily = SkinTempPacket.family(
+                    samples: skin,
+                    registry: Self.skinTempFamily(forOwner: owner, devices: regDevices))
                 // #1467: the worn-gate timestamp tolerance for this owner (0 for WHOOP, byte-identical).
                 let skinWornToleranceSec = Self.skinTempWornToleranceSec(forOwner: owner, devices: regDevices)
                 // #938 (second capture): learn THIS device's worn skin-temp anchor raw ONCE, WINDOW-WIDE (the

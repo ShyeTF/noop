@@ -453,7 +453,7 @@ struct LiveView: View {
                      row.strain.map { String(localized: "effort \(UnitFormatter.effortDisplay($0, scale: effortScale))") }].compactMap { $0 }
         return HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(StrandPalette.accent)
-            Text("Workout saved · \(parts.joined(separator: " · "))")
+            Text(String(localized: "Workout saved · \(parts.joined(separator: " · "))"))
                 .font(StrandFont.footnote).foregroundStyle(StrandPalette.textSecondary)
             Spacer(minLength: 0)
         }
@@ -479,7 +479,7 @@ struct LiveView: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
             .strokeBorder(StrandPalette.statusWarning.opacity(0.5), lineWidth: 1))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Reconnect help: \(guide)")
+        .accessibilityLabel(String(localized: "Reconnect help: \(guide)"))
     }
 
     private func pairingHintBanner(_ hint: String) -> some View {
@@ -501,7 +501,7 @@ struct LiveView: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
             .strokeBorder(StrandPalette.statusWarning.opacity(0.5), lineWidth: 1))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Pairing help: \(hint)")
+        .accessibilityLabel(String(localized: "Pairing help: \(hint)"))
     }
 
     /// Whether the low-bandwidth standard-HR fallback note should render. The note explains that live HR
@@ -538,7 +538,7 @@ struct LiveView: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
             .strokeBorder(StrandPalette.accent.opacity(0.4), lineWidth: 1))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Standard HR mode, low bandwidth. \(detail)")
+        .accessibilityLabel(String(localized: "Standard HR mode, low bandwidth. \(detail)"))
     }
 
     // MARK: - Strap picker
@@ -602,7 +602,7 @@ struct LiveView: View {
                             .foregroundStyle(StrandPalette.textPrimary)
                         // Name the band Scan will connect to, and point pairing/switching at Devices — so
                         // an offline user knows both what this button does and where to add a different band.
-                        Text("Scan connects to \(activeDeviceName). To pair or switch bands, open Devices.")
+                        Text(String(localized: "Scan connects to \(activeDeviceName). To pair or switch bands, open Devices."))
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -923,7 +923,7 @@ private struct LiveHeartReadout: View {
                         .font(StrandFont.caption)
                         .foregroundStyle(StrandPalette.textSecondary)
                     if liveZone >= 1 {
-                        Text("ZONE \(liveZone)")
+                        Text(String(localized: "ZONE \(liveZone)"))
                             .font(StrandFont.overline)
                             .tracking(StrandFont.overlineTracking)
                             .foregroundStyle(tint)
@@ -997,12 +997,12 @@ private struct LivePhysiology: View {
                         Text("RMSSD")
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textTertiary)
-                        Text("\(Int(rmssd.rounded())) ms")
+                        Text(String(localized: "\(Int(rmssd.rounded())) ms"))
                             .font(StrandFont.number(24))
                             .foregroundStyle(StrandPalette.metricCyan)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Rolling RMSSD \(Int(rmssd.rounded())) milliseconds")
+                    .accessibilityLabel(String(localized: "Rolling RMSSD \(Int(rmssd.rounded())) milliseconds"))
                 }
             }
             rrTrace

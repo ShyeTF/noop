@@ -514,9 +514,9 @@ struct WorkoutDetailView: View {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(StrandPalette.hrZoneColor(zone))
                     .frame(width: 9, height: 9)
-                Text("Z\(zone)" as String).strandOverline()
+                Text(String(localized: "Z\(zone)") as String).strandOverline()
             }
-            Text("\(Int((minutes / max(total, 0.001) * 100).rounded()))%")
+            Text(String(localized: "\(Int((minutes / max(total, 0.001) * 100).rounded()))%"))
                 .font(StrandFont.number(15))
                 .foregroundStyle(StrandPalette.textPrimary)
             Text(durationLabel(minutes * 60))

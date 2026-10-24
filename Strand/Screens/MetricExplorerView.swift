@@ -1763,7 +1763,7 @@ struct MetricDetailView: View {
                     StatePill("Scanning the catalog…", tone: .accent, pulsing: true)
                         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
                 } else if rows.isEmpty {
-                    Text("Nothing in the catalog moves clearly with \(metric.title.lowercased()) over this window. Widen the range to surface relationships.")
+                    Text(String(localized: "Nothing in the catalog moves clearly with \(metric.title.lowercased()) over this window. Widen the range to surface relationships."))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
@@ -1794,7 +1794,7 @@ struct MetricDetailView: View {
                 Text(row.metric.title)
                     .font(StrandFont.body)
                     .foregroundStyle(StrandPalette.textPrimary)
-                Text("\(MetricCatalog.categoryDisplayName(row.metric.category)) · n = \(row.n)")
+                Text(String(localized: "\(MetricCatalog.categoryDisplayName(row.metric.category)) · n = \(row.n)"))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }
@@ -1814,7 +1814,7 @@ struct MetricDetailView: View {
         }
         .padding(.vertical, 10)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(row.metric.title), correlation \(String(format: "%.2f", row.r)), \(row.n) days")
+        .accessibilityLabel(String(localized: "\(row.metric.title), correlation \(String(format: "%.2f", row.r)), \(row.n) days"))
     }
 
     // MARK: Helpers

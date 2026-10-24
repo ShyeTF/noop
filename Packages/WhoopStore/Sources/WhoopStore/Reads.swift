@@ -654,15 +654,15 @@ extension WhoopStore {
     public func skinTempSamples(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [SkinTempSample] {
         try syncRead { db in
             try Row.fetchAll(db, sql: """
-                SELECT ts, raw, aux1Raw, aux2Raw FROM skinTempSample
+                SELECT ts, raw, aux1Raw, aux2Raw, layoutVersion FROM skinTempSample
                 WHERE deviceId = ? AND ts >= ? AND ts <= ?
                 ORDER BY ts ASC LIMIT ?
                 """, arguments: [deviceId, from, to, limit])
-                // aux1Raw/aux2Raw (v31) read back nil for any pre-v31 row and for any WHOOP 4.0 record,
-                // whose layout has no such channels. No caller reads them; they are hydrated so the
-                // carrier is a faithful view of the row rather than a lossy one.
+                // aux1Raw/aux2Raw (v31) and layoutVersion (v48) read back nil for older rows.
+                // The raw column is never rewritten.
                 .map { SkinTempSample(ts: $0["ts"], raw: $0["raw"],
-                                      aux1Raw: $0["aux1Raw"], aux2Raw: $0["aux2Raw"]) }
+                                      aux1Raw: $0["aux1Raw"], aux2Raw: $0["aux2Raw"],
+                                      layoutVersion: $0["layoutVersion"]) }
         }
     }
 

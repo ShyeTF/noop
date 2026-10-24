@@ -103,6 +103,10 @@ final class OuraAPIClient {
     }
 
     private func get(endpoint: String, query: [String: String], token: String) async throws -> (Data, Int) {
+        if NutryHostedEgress.isEmbeddedInNutry {
+            throw OuraError.network(
+                NutryHostedEgress.denyNOOPOutbound(feature: "Oura cloud").localizedDescription)
+        }
         var comps = URLComponents(string: "\(environment.baseURL)/\(endpoint)")!
         if !query.isEmpty { comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) } }
         var req = URLRequest(url: comps.url!)

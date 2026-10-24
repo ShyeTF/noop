@@ -208,7 +208,7 @@ struct CoachView: View {
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
 
-                Text("Coach uses your own API key. Pick a provider, paste a key, and choose a model. Your key is stored securely in the Keychain and never leaves \(Platform.deviceNounPhrase) except as the request you make.")
+                Text(String(localized: "Coach uses your own API key. Pick a provider, paste a key, and choose a model. Your key is stored securely in the Keychain and never leaves \(Platform.deviceNounPhrase) except as the request you make."))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -241,7 +241,7 @@ struct CoachView: View {
                                 .strokeBorder(StrandPalette.hairline, lineWidth: 1))
                             .disableAutocorrection(true)
                             .accessibilityLabel("Server URL")
-                        Text("Any OpenAI-compatible server: Ollama, LM Studio, llama.cpp, or your own gateway. Stays on your network; nothing leaves \(Platform.deviceNounPhrase).")
+                        Text(String(localized: "Any OpenAI-compatible server: Ollama, LM Studio, llama.cpp, or your own gateway. Stays on your network; nothing leaves \(Platform.deviceNounPhrase)."))
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -545,7 +545,7 @@ struct CoachView: View {
                     .frame(maxWidth: 520, alignment: .trailing)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("You said: \(message.text)")
+            .accessibilityLabel(String(localized: "You said: \(message.text)"))
         case .assistant:
             // LLM replies arrive as Markdown (bold, lists, headings, tables),             // rendered with the chat-bubble-sized Strand theme. User bubbles stay
             // verbatim `Text` so typed `*`/`#` never turn into surprise formatting.
@@ -584,7 +584,7 @@ struct CoachView: View {
                 Spacer(minLength: 48)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Coach said: \(message.text)")
+            .accessibilityLabel(String(localized: "Coach said: \(message.text)"))
         }
     }
 
@@ -617,7 +617,7 @@ struct CoachView: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Error: \(message)")
+        .accessibilityLabel(String(localized: "Error: \(message)"))
     }
 
     /// The inline replacement-key editor, shown after a rejection or an Update key action.
@@ -693,7 +693,7 @@ struct CoachView: View {
                     // affordance gets, replacing the flat `.plain` press.
                     .buttonStyle(LiquidPressStyle())
                     .disabled(coach.sending)
-                    .accessibilityLabel("Suggested prompt: \(prompt)")
+                    .accessibilityLabel(String(localized: "Suggested prompt: \(prompt)"))
                 }
             }
             .padding(.vertical, 1)
@@ -727,7 +727,7 @@ struct CoachView: View {
                     }
                     .buttonStyle(LiquidPressStyle())
                     .disabled(coach.sending)
-                    .accessibilityLabel("Follow-up prompt: \(prompt)")
+                    .accessibilityLabel(String(localized: "Follow-up prompt: \(prompt)"))
                 }
             }
             .padding(.vertical, 1)
@@ -741,7 +741,7 @@ struct CoachView: View {
             Image(systemName: "speedometer")
                 .font(.system(size: 10))
                 .foregroundStyle(StrandPalette.textTertiary)
-            Text("~\(tokens) tokens")
+            Text(String(localized: "~\(tokens) tokens"))
                 .font(StrandFont.captionNumber)
                 .foregroundStyle(StrandPalette.textTertiary)
             if tokens > 8000 {

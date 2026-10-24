@@ -75,6 +75,37 @@ final class SleepStagerTests: XCTestCase {
         XCTAssertEqual(s.restingHR, 50)
     }
 
+    /// A timeout that banked the rest of the night asks for a rescore. The stager then
+    /// keeps one episode while every gap stays under 20 minutes, so the wake moves later.
+    func testTimeoutWithBankedLateNightSamplesSchedulesRescoreAndExtendsTheNight() {
+        XCTAssertTrue(WhoopBankedPass.schedulesRescore(persistedRows: true))
+        XCTAssertFalse(WhoopBankedPass.schedulesRescore(persistedRows: false))
+        let start = nightStart(2)
+        let partialEnd = nightStart(8) - 60
+        let fullEnd = nightStart(11) + 15 * 60
+        let step = 30
+        func stream(until end: Int) -> (hr: [HRSample], grav: [GravitySample]) {
+            var hr: [HRSample] = []
+            var grav: [GravitySample] = []
+            var cursor = start
+            while cursor <= end {
+                hr.append(HRSample(ts: cursor, bpm: 50))
+                grav.append(GravitySample(ts: cursor, x: 0, y: 0, z: 1))
+                cursor += step
+            }
+            return (hr, grav)
+        }
+        let partial = stream(until: partialEnd)
+        let full = stream(until: fullEnd)
+        let short = SleepStager.detectSleep(hr: partial.hr, gravity: partial.grav)
+        let long = SleepStager.detectSleep(hr: full.hr, gravity: full.grav)
+        XCTAssertEqual(short.count, 1)
+        XCTAssertEqual(long.count, 1)
+        XCTAssertLessThanOrEqual(short[0].end, partialEnd)
+        XCTAssertGreaterThan(long[0].end, short[0].end + 60 * 60)
+        XCTAssertGreaterThan(long[0].end, partialEnd)
+    }
+
     func testDetectSleepRejectsShortBout() {
         // Only 30 min still — below MIN_SLEEP_MIN (60) → no session.
         let start = 2_000_000

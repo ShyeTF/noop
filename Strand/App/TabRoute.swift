@@ -69,7 +69,16 @@ extension View {
             case .stress: StressView()
             case .sleep: SleepView()
             case .health: HealthView()
-            case .hydration: HydrationView()
+            case .hydration:
+                if NutryWhoopIntegration.hosted {
+                    NutryIntegratedHandoff(
+                        title: "Eau",
+                        detail: "Le suivi de l’eau se fait dans Compte, avec vos objectifs Nutry.",
+                        button: "Ouvrir le suivi de l’eau",
+                        destination: "water")
+                } else {
+                    HydrationView()
+                }
             case .coupled: CoupledView()
             }
         }

@@ -298,7 +298,7 @@ struct StressView: View {
                         let drawnPeak = day.timeline.filter { $0.level != nil }
                             .max { ($0.level ?? 0) < ($1.level ?? 0) }
                         if let peak = drawnPeak, let lvl = peak.level {
-                            Text("peak \(StressTrace.formatLevel(lvl)) · \(hourLabel(peak.hour))")
+                            Text(String(localized: "peak \(StressTrace.formatLevel(lvl)) · \(hourLabel(peak.hour))"))
                                 .font(StrandFont.captionNumber)
                                 .foregroundStyle(StressRamp.color(lvl))
                         }
@@ -378,7 +378,7 @@ struct StressView: View {
                     Spacer()
                     StatePill("\(day.sustainedRun)h elevated", tone: .warning, showsDot: true)
                 }
-                Text("Your last \(day.sustainedRun) hours have stayed in the high band. A few minutes of paced breathing can help downshift your nervous system.")
+                Text(String(localized: "Your last \(day.sustainedRun) hours have stayed in the high band. A few minutes of paced breathing can help downshift your nervous system."))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

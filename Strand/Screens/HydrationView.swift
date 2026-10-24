@@ -118,7 +118,7 @@ struct HydrationView: View {
                 .accessibilityLabel("Hydration today")
                 .accessibilityValue("\(String(format: "%.1f", HydrationGoal.litres(fromML: totalML))) of \(String(format: "%.1f", HydrationGoal.litres(fromML: Double(goalML)))) litres")
 
-                Text("\(percent)% of today's goal")
+                Text(String(localized: "\(percent)% of today's goal"))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }
@@ -150,7 +150,7 @@ struct HydrationView: View {
                 NoopButton("Custom \(customSizeML) ml", systemImage: "drop.circle", kind: .secondary, fullWidth: true) {
                     Task { await add(ml: customSizeML) }
                 }
-                .accessibilityLabel("Log custom \(customSizeML) millilitres")
+                .accessibilityLabel(String(localized: "Log custom \(customSizeML) millilitres"))
                 Button { showCustomSizeSheet = true } label: {
                     Image(systemName: "pencil")
                         .font(.system(size: 15, weight: .semibold))
@@ -163,7 +163,7 @@ struct HydrationView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Set custom container size")
             }
-            Text("Sip \(HydrationGoal.sipML) ml · Cup \(HydrationGoal.cupML) ml · Bottle \(HydrationGoal.bottleML) ml")
+            Text(String(localized: "Sip \(HydrationGoal.sipML) ml · Cup \(HydrationGoal.cupML) ml · Bottle \(HydrationGoal.bottleML) ml"))
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
         }
@@ -174,7 +174,7 @@ struct HydrationView: View {
         NoopButton(title, systemImage: systemImage, kind: .secondary, fullWidth: true) {
             Task { await add(ml: ml) }
         }
-        .accessibilityLabel("Log \(title)")
+        .accessibilityLabel(String(localized: "Log \(title)"))
     }
 
     // MARK: - Today's logged drinks (#798) - swipe to delete, tap to edit
@@ -225,14 +225,14 @@ struct HydrationView: View {
                 .font(StrandFont.subhead)
                 .foregroundStyle(StrandPalette.textSecondary)
             Spacer(minLength: 8)
-            Text("\(Int(importedML.rounded())) ml")
+            Text(String(localized: "\(Int(importedML.rounded())) ml"))
                 .font(StrandFont.subhead.weight(.semibold))
                 .foregroundStyle(StrandPalette.textPrimary)
                 .monospacedDigit()
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(Int(importedML.rounded())) millilitres from Apple Health. Edit it in the app that logged it.")
+        .accessibilityLabel(String(localized: "\(Int(importedML.rounded())) millilitres from Apple Health. Edit it in the app that logged it."))
         if !entries.isEmpty { Divider().opacity(0.4) }
     }
 
@@ -249,7 +249,7 @@ struct HydrationView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textSecondary)
                     Spacer(minLength: 8)
-                    Text("\(entry.amountMl) ml")
+                    Text(String(localized: "\(entry.amountMl) ml"))
                         .font(StrandFont.subhead.weight(.semibold))
                         .foregroundStyle(StrandPalette.textPrimary)
                         .monospacedDigit()
@@ -258,7 +258,7 @@ struct HydrationView: View {
             }
             // Liquid tap response: the same physical settle-inward every tappable liquid row gets.
             .buttonStyle(LiquidPressStyle())
-            .accessibilityLabel("Logged \(entry.amountMl) millilitres at \(Self.entryTimeFmt.string(from: entry.loggedAt))")
+            .accessibilityLabel(String(localized: "Logged \(entry.amountMl) millilitres at \(Self.entryTimeFmt.string(from: entry.loggedAt))"))
             .accessibilityHint("Tap to edit the amount")
             Button(role: .destructive) {
                 Task { await deleteEntry(entry) }
@@ -270,7 +270,7 @@ struct HydrationView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Delete the \(entry.amountMl) millilitre drink logged at \(Self.entryTimeFmt.string(from: entry.loggedAt))")
+            .accessibilityLabel(String(localized: "Delete the \(entry.amountMl) millilitre drink logged at \(Self.entryTimeFmt.string(from: entry.loggedAt))"))
         }
     }
 
@@ -319,7 +319,7 @@ struct HydrationView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(weekdayInitial(bar.day)): \(String(format: "%.1f", HydrationGoal.litres(fromML: bar.value))) litres")
+                    .accessibilityLabel(String(localized: "\(weekdayInitial(bar.day)): \(String(format: "%.1f", HydrationGoal.litres(fromML: bar.value))) litres"))
                 }
             }
         }
@@ -346,7 +346,7 @@ struct HydrationView: View {
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textPrimary)
                         Spacer(minLength: 8)
-                        Text("\(Int(totalML)) ml")
+                        Text(String(localized: "\(Int(totalML)) ml"))
                             .font(StrandFont.headline.weight(.semibold))
                             .foregroundStyle(StrandPalette.textPrimary)
                             .monospacedDigit()
@@ -453,7 +453,7 @@ private struct HydrationAmountSheet: View {
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                 Spacer()
-                Text("\(ml) ml")
+                Text(String(localized: "\(ml) ml"))
                     .font(StrandFont.rounded(28, weight: .bold))
                     .foregroundStyle(StrandPalette.textPrimary)
                     .monospacedDigit()

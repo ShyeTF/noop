@@ -108,7 +108,7 @@ struct LiftSessionDetailSheet: View {
             Button("Delete", role: .destructive) { Task { await deleteSession() } }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("\(performed.count) recorded sets will be removed, and so will the workout this session created. This cannot be undone.")
+            Text(String(localized: "\(performed.count) recorded sets will be removed, and so will the workout this session created. This cannot be undone."))
         }
     }
 

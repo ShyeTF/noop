@@ -20,6 +20,8 @@ final class ProfileStore: ObservableObject {
         }
     }
     @Published var sex: String { didSet { d.set(sex, forKey: K.sex) } }          // "male" | "female" | "nonbinary"
+    /// True only after an explicit choice. The factory value "male" is not a choice.
+    var sexWasChosen: Bool { d.object(forKey: K.sex) != nil }
     @Published var weightKg: Double { didSet { d.set(weightKg, forKey: K.weight) } }
     @Published var heightCm: Double { didSet { d.set(heightCm, forKey: K.height) } }
     /// Optional waist circumference (cm); 0 = not set. Only used to ALSO show an estimated VO₂max

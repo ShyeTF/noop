@@ -197,7 +197,7 @@ struct TrendsView: View {
                 Text("Trailing")
                     .strandOverline()
                     .lineLimit(1)
-                Text("\(days) days")
+                Text(String(localized: "\(days) days"))
                     .strandOverline()
                     .lineLimit(1)
             }
@@ -523,7 +523,7 @@ struct TrendsView: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: NoopMetrics.space1) {
                     Text("Export trends report").strandOverline()
-                    Text("A shareable one-page PDF of recovery, sleep, HRV, resting HR and strain over a range, saved on your \(Platform.deviceNoun).")
+                    Text(String(localized: "A shareable one-page PDF of recovery, sleep, HRV, resting HR and strain over a range, saved on your \(Platform.deviceNoun)."))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)

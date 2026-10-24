@@ -62,7 +62,7 @@ final class HistoricalV24Tests: XCTestCase {
         XCTAssertEqual(st.hr, [HRSample(ts: 1700000000, bpm: 63)])
         XCTAssertEqual(st.rr, [RRInterval(ts: 1700000000, rrMs: 850)])
         XCTAssertEqual(st.spo2.first, SpO2Sample(ts: 1700000000, red: 18000, ir: 17000))
-        XCTAssertEqual(st.skinTemp.first, SkinTempSample(ts: 1700000000, raw: 900))
+        XCTAssertEqual(st.skinTemp.first, SkinTempSample(ts: 1700000000, raw: 900, layoutVersion: 24))
         XCTAssertEqual(st.resp.first?.raw, 3000)
         let g = try! XCTUnwrap(st.gravity.first)
         XCTAssertEqual(g.ts, 1700000000)

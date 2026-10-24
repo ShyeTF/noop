@@ -152,7 +152,7 @@ struct FusedRecordView: View {
                 .foregroundStyle(StrandPalette.accent)
                 .accessibilityHidden(true)
             if let owner = record.dayOwner {
-                Text("Today's scores owned by \(owner.displayName)")
+                Text(String(localized: "Today's scores owned by \(owner.displayName)"))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textSecondary)
             } else {
@@ -172,7 +172,7 @@ struct FusedRecordView: View {
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .accessibilityHidden(true)
-            Text("Fused on \(deviceNoun). Nothing leaves it: no account, no cloud.")
+            Text(String(localized: "Fused on \(deviceNoun). Nothing leaves it: no account, no cloud."))
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
             Spacer(minLength: 0)
@@ -277,7 +277,7 @@ private struct FusedMetricRowView: View {
 
         case .agree:
             if let other = point.contributors.dropFirst().first {
-                Text("\(other.source.displayName) agrees: \(FusionFormat.value(other.value, metricKey: point.metric, temperature: temperatureUnit))")
+                Text(String(localized: "\(other.source.displayName) agrees: \(FusionFormat.value(other.value, metricKey: point.metric, temperature: temperatureUnit))"))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }
@@ -355,7 +355,7 @@ private struct ConflictCompareSheet: View {
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.accent)
                             .accessibilityHidden(true)
-                        Text("NOOP shows the \(winner.source.displayName) reading because it \(winner.reason) for this metric: a higher-trust source here, not a verdict that the others are wrong.")
+                        Text(String(localized: "NOOP shows the \(winner.source.displayName) reading because it \(winner.reason) for this metric: a higher-trust source here, not a verdict that the others are wrong."))
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)

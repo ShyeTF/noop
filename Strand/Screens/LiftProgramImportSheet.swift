@@ -114,7 +114,7 @@ struct LiftProgramImportSheet: View {
                         Text(program.name)
                             .font(StrandFont.headline)
                             .foregroundStyle(StrandPalette.textPrimary)
-                        Text("\(program.lines.count) exercises")
+                        Text(String(localized: "\(program.lines.count) exercises"))
                             .font(StrandFont.caption)
                             .foregroundStyle(StrandPalette.textTertiary)
                         ForEach(Array(program.lines.enumerated()), id: \.offset) { _, line in

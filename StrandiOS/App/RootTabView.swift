@@ -136,7 +136,7 @@ struct RootTabView: View {
             // shapes, so a wearer's More tab keeps its identity, its navigation path and its scroll
             // position across a flip instead of inheriting Coach's.
             if coachEnabled {
-                tab(CoachView(), "Coach", "sparkles", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
+                tab(coachTabRoot, "Coach", "sparkles", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
             }
             moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
         }
@@ -271,7 +271,8 @@ struct RootTabView: View {
         // inside the Lift Log screen, because a workout outlives whichever screen you wandered to —
         // and because swiping the sheet away must minimise the session, not end it.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if liftSession.isActive {
+            // Nutry: la séance de musculation est Muscu. Le bandeau vendu ne se superpose pas.
+            if liftSession.isActive, !NutryWhoopIntegration.hosted {
                 LiftSessionBar()
                     .padding(.horizontal, 14)
                     // Clear the floating tab bar with the same constant every screen uses, or the
@@ -284,9 +285,23 @@ struct RootTabView: View {
         // A session left running by a previous launch is back before this view exists
         // (`LiftSessionController.resumeSaved`, from `StrandiOSApp.init`), as the BAR — not as a sheet
         // thrown in the user's face; they open it when they want it.
-        .sheet(isPresented: $liftSession.isPresented) {
+        .sheet(isPresented: hostedLiftPresented) {
             LiftSessionView { }
         }
+    }
+
+    /// Nutry héberge le coach déjà présent sur l’accueil. Hors Nutry, l’écran vendu reste en place.
+    @ViewBuilder
+    private var coachTabRoot: some View {
+        nutryCoachDestination()
+    }
+
+    /// La feuille de séance musculation reste l’écran vendu seulement hors Nutry.
+    private var hostedLiftPresented: Binding<Bool> {
+        Binding(
+            get: { liftSession.isPresented && !NutryWhoopIntegration.hosted },
+            set: { liftSession.isPresented = $0 }
+        )
     }
 
     /// Mandatory launch gates defer an external action. Once the shell is available, an explicit Home
@@ -338,7 +353,7 @@ struct RootTabView: View {
                 // #1862 launcher both arrive that way, the launcher's question riding on
                 // `AICoachEngine.pendingPrompt`); this keeps the switch exhaustive and falls back to Coach if
                 // it ever reaches the host.
-                case .coach: CoachView()
+                case .coach: coachTabRoot
                 case .alarms: SmartAlarmView()
                 }
             }
@@ -592,6 +607,32 @@ struct RootTabView: View {
     }
 }
 
+@ViewBuilder
+private func nutryCoachDestination() -> some View {
+    if NutryWhoopIntegration.hosted {
+        NutryIntegratedHandoff(
+            title: "Coach",
+            detail: "Les conseils et la conversation sont ceux de Nutry, sur l’accueil. Ils tiennent déjà compte de votre récupération et de votre sommeil.",
+            button: "Ouvrir le coach Nutry",
+            destination: "coach")
+    } else {
+        CoachView()
+    }
+}
+
+@ViewBuilder
+private func liftLogDestination() -> some View {
+    if NutryWhoopIntegration.hosted {
+        NutryIntegratedHandoff(
+            title: "Muscu",
+            detail: "Les séances de musculation se suivent dans Muscu, avec vos charges et votre historique Nutry.",
+            button: "Ouvrir Muscu",
+            destination: "strength")
+    } else {
+        LiftLogView()
+    }
+}
+
 /// Every screen the More index links to, as a `Hashable` value the tab's `NavigationPath` can carry
 /// (#198): a closure-destination push would bypass the path and be un-poppable on tab re-tap. The
 /// per-screen chrome the old inline links applied lives at the single `navigationDestination(for:)`
@@ -606,13 +647,13 @@ private enum MoreDestination: Hashable {
         switch self {
         case .insightsHub:     InsightsHubView()
         case .intelligence:    IntelligenceView()
-        case .coach:           CoachView()
+        case .coach:           nutryCoachDestination()
         case .insights:        InsightsView()
         case .explore:         MetricExplorerView()
         case .compare:         CompareView()
         case .live:            LiveView()
         case .workouts:        WorkoutsView()
-        case .liftLog:         LiftLogView()
+        case .liftLog:         liftLogDestination()
         case .health:          HealthView()
         case .labBook:         LabBookView()
         case .stress:          StressView()

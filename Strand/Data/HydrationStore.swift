@@ -227,6 +227,22 @@ extension Repository {
         Self.hydrationEntries(day: day ?? Repository.localDayKey(Date()))
     }
 
+    /// Newest hand-logged drink across the last nine local days. Read-only: nothing is written or migrated.
+    /// The coach tip engine applies the 7×24 h window itself.
+    func latestLoggedHydrationAt(now: Date = Date()) -> Date? {
+        let calendar = Calendar.current
+        var best: Date?
+        for offset in 0...8 {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: now) else { continue }
+            let key = Repository.localDayKey(day)
+            for entry in Self.hydrationEntries(day: key) where entry.amountMl > 0 {
+                if let current = best, entry.loggedAt <= current { continue }
+                best = entry.loggedAt
+            }
+        }
+        return best
+    }
+
     /// Delete one logged entry by id, then re-derive the day total from the surviving entries and re-bank it
     /// into `metricSeries` so the ring, Today card and 7-day history all reflect the deletion. Returns the
     /// new day total (ml).

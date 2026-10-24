@@ -289,6 +289,7 @@ enum BatteryNotifier {
             // the whole point is reaching the user in the hour before bed. Without the time-sensitive
             // entitlement the OS silently treats this as .active, so it is safe to request either way.
             content.interruptionLevel = interruptionLevel
+            content.userInfo = ["route": "whoop"]
             center.add(UNNotificationRequest(identifier: identifier,
                                              content: content, trigger: nil))
         }

@@ -238,11 +238,6 @@ struct SettingsView: View {
     /// low-power, sideload + cert expiry). iOS-only; the macOS strap log already carries OS + version.
     @State private var showDiagnostics = false
 
-    /// User-initiated GitHub release check behind the About "Check for updates" button.
-    @StateObject private var updateChecker = UpdateChecker()
-    /// #1659. Default comes from `UpdateAvailability.defaultEnabled` so the toggle and the launch check
-    /// cannot disagree about what "unset" means.
-    @AppStorage(UpdateWatch.Keys.enabled) private var autoCheckUpdates = UpdateAvailability.defaultEnabled
     @Environment(\.openURL) private var openURL
 
     /// Whether the "Advanced" disclosure (Recovery, Test Centre, experimental probes, Backup &
@@ -261,8 +256,23 @@ struct SettingsView: View {
                        topBackground: liquidScaffoldSky()) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionSpacing) {
                 // Everyday sections stay expanded (S3): the ones a first-run user actually needs.
-                profileCard.staggeredAppear(index: 0)
-                unitsCard.staggeredAppear(index: 1)
+                if NutryWhoopIntegration.hosted {
+                    NutrySettingsHandoffCard(
+                        title: "Profil",
+                        detail: "Le poids, la taille et le profil se règlent dans Compte.",
+                        button: "Ouvrir le profil",
+                        destination: "profile"
+                    ).staggeredAppear(index: 0)
+                    NutrySettingsHandoffCard(
+                        title: "Unités",
+                        detail: "Les unités affichées suivent Nutry.",
+                        button: "Ouvrir les unités",
+                        destination: "units"
+                    ).staggeredAppear(index: 1)
+                } else {
+                    profileCard.staggeredAppear(index: 0)
+                    unitsCard.staggeredAppear(index: 1)
+                }
                 appearanceCard.staggeredAppear(index: 2)
                 strapCard.staggeredAppear(index: 3)
                 #if os(iOS)
@@ -382,7 +392,7 @@ struct SettingsView: View {
                                    displayedComponents: .date)
                             .labelsHidden()
                             .tint(StrandPalette.accent)
-                            .accessibilityLabel("Date of birth, age \(profile.age) years")
+                            .accessibilityLabel(String(localized: "Date of birth, age \(profile.age) years"))
                     }
                 }
                 rowDivider
@@ -515,7 +525,7 @@ struct SettingsView: View {
                             profile.stepTicksPerStep = ProfileStore.steppedStepScale(profile.stepTicksPerStep, up: false)
                         }
                             .labelsHidden()
-                            .accessibilityLabel("Step calibration, \(String(format: "%.1f", profile.stepTicksPerStep)) counter ticks per step")
+                            .accessibilityLabel(String(localized: "Step calibration, \(String(format: "%.1f", profile.stepTicksPerStep)) counter ticks per step"))
                     }
                 }
                 Text("Counter ticks per step. Leave at 1.0 unless your steps run high. On a WHOOP 5/MG they can run very high (10× or more), so this goes up to 30. Walk a known 1,000 steps and divide NOOP's count by the real count to get your value.")
@@ -544,7 +554,7 @@ struct SettingsView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(LiquidPressStyle())
-                .accessibilityLabel("Steps estimate calibration. \(stepsCalibrationSummary). Opens the calibration screen.")
+                .accessibilityLabel(String(localized: "Steps estimate calibration. \(stepsCalibrationSummary). Opens the calibration screen."))
                 Text("For a WHOOP 4.0, which sends no step count: NOOP estimates steps from motion, calibrated to your phone. Tap to see how close it is and adjust it.")
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
@@ -582,7 +592,7 @@ struct SettingsView: View {
                 }
             }
 
-            Text("Optional. Add a photo for your avatar. It stays on \(Platform.deviceNounPhrase) and is never uploaded.")
+            Text(String(localized: "Optional. Add a photo for your avatar. It stays on \(Platform.deviceNounPhrase) and is never uploaded."))
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -699,7 +709,7 @@ struct SettingsView: View {
                 .accessibilityHint("Removes the custom background and restores the day-cycle sky")
             }
 
-            Text("Optional. Use your own photo behind every tab, in place of the day-cycle sky. It stays on \(Platform.deviceNounPhrase) and is never uploaded. Pair it with Transparent cards above to let it show through.")
+            Text(String(localized: "Optional. Use your own photo behind every tab, in place of the day-cycle sky. It stays on \(Platform.deviceNounPhrase) and is never uploaded. Pair it with Transparent cards above to let it show through."))
                 .font(StrandFont.caption)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -781,7 +791,7 @@ struct SettingsView: View {
             .fixedSize()
             Stepper("Weight in pounds", value: lb, in: 66...551, step: 1)
                 .labelsHidden()
-                .accessibilityLabel("Weight, \(Int(lb.wrappedValue.rounded())) pounds")
+                .accessibilityLabel(String(localized: "Weight, \(Int(lb.wrappedValue.rounded())) pounds"))
         }
         .fixedSize()
     }
@@ -801,7 +811,7 @@ struct SettingsView: View {
                 .frame(width: NoopMetrics.formWideValueColumnWidth, alignment: .center)
             Stepper("Height in inches", value: inches, in: 47...91, step: 1)
                 .labelsHidden()
-                .accessibilityLabel("Height, \(parts.feet) feet \(parts.inches) inches")
+                .accessibilityLabel(String(localized: "Height, \(parts.feet) feet \(parts.inches) inches"))
         }
         .fixedSize()
     }
@@ -891,7 +901,7 @@ struct SettingsView: View {
             Stepper("Max heart rate override",
                     value: $profile.hrMaxOverride, in: 0...230, step: 1)
                 .labelsHidden()
-                .accessibilityLabel("Max heart rate override, \(profile.hrMaxOverride == 0 ? "automatic" : "\(profile.hrMaxOverride) bpm")")
+                .accessibilityLabel(String(localized: "Max heart rate override, \(profile.hrMaxOverride == 0 ? "automatic" : "\(profile.hrMaxOverride) bpm")"))
         }
         .fixedSize()
     }
@@ -916,7 +926,7 @@ struct SettingsView: View {
                     onIncrement: { profile.stepHRZoneThreshold(at: index, up: true) },
                     onDecrement: { profile.stepHRZoneThreshold(at: index, up: false) })
                 .labelsHidden()
-                .accessibilityLabel("Zone \(index + 1) starts at \(value) beats per minute")
+                .accessibilityLabel(String(localized: "Zone \(index + 1) starts at \(value) beats per minute"))
         }
         .fixedSize()
     }
@@ -1477,7 +1487,7 @@ struct SettingsView: View {
     @ViewBuilder private var strapNameControl: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Strap name").strandOverline()
-            Text("Current: \(live.advertisingName ?? "—")")
+            Text(String(localized: "Current: \(live.advertisingName ?? "—")"))
                 .font(StrandFont.subhead)
                 .foregroundStyle(StrandPalette.textSecondary)
             HStack(spacing: NoopMetrics.space3) {
@@ -1684,7 +1694,7 @@ struct SettingsView: View {
                 .tint(StrandPalette.accent)
                 .accessibilityHint("Adds a water-log card to your dashboard")
 
-                Text("Adds a simple fluid log with a daily goal that adjusts to your effort. Tap to add a sip, cup or bottle and watch a progress ring fill. On \(Platform.deviceNounPhrase) only. Nothing is synced.")
+                Text(String(localized: "Adds a simple fluid log with a daily goal that adjusts to your effort. Tap to add a sip, cup or bottle and watch a progress ring fill. On \(Platform.deviceNounPhrase) only. Nothing is synced."))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1700,7 +1710,7 @@ struct SettingsView: View {
                 .tint(StrandPalette.accent)
                 .accessibilityHint("Offers to save a workout when it spots sustained elevated heart rate")
 
-                Text("After a sync, NOOP looks over your recent heart rate for a sustained, raised stretch that looks like exercise and offers to save it. It only ever suggests. Nothing is saved until you tap Save, and you can dismiss any suggestion. Turning this off stops future suggestions but keeps your existing workout history. Deliberately conservative, so the odd workout may be missed. On \(Platform.deviceNounPhrase) only.")
+                Text(String(localized: "After a sync, NOOP looks over your recent heart rate for a sustained, raised stretch that looks like exercise and offers to save it. It only ever suggests. Nothing is saved until you tap Save, and you can dismiss any suggestion. Turning this off stops future suggestions but keeps your existing workout history. Deliberately conservative, so the odd workout may be missed. On \(Platform.deviceNounPhrase) only."))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2052,7 +2062,7 @@ struct SettingsView: View {
                 }
                 #endif
 
-                Text("Dumps the last 24 hours of decoded per-sample sensor streams (heart rate, R-R, motion, steps, SpO₂, skin temperature, respiration, events) to a single CSV. All on \(Platform.deviceNounPhrase), nothing uploaded. Share it to help prototype and test sleep, activity and strength algorithms.")
+                Text(String(localized: "Dumps the last 24 hours of decoded per-sample sensor streams (heart rate, R-R, motion, steps, SpO₂, skin temperature, respiration, events) to a single CSV. All on \(Platform.deviceNounPhrase), nothing uploaded. Share it to help prototype and test sleep, activity and strength algorithms."))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2186,7 +2196,7 @@ struct SettingsView: View {
                         .foregroundStyle(StrandPalette.textTertiary)
                         .font(.system(size: 13))
                         .accessibilityHidden(true)
-                    Text("Importing overwrites everything currently on \(Platform.deviceNounPhrase). Your old data is kept in a side file just in case. NOOP needs a relaunch for an import to take effect. Export CSV writes a WHOOP-format zip of your days, sleeps, workouts and journal that re-imports into NOOP on Mac, iPhone, or Android. On-device computed rows are marked APPROXIMATE in its Source column; the full backup stays the lossless restore path.")
+                    Text(String(localized: "Importing overwrites everything currently on \(Platform.deviceNounPhrase). Your old data is kept in a side file just in case. NOOP needs a relaunch for an import to take effect. Export CSV writes a WHOOP-format zip of your days, sleeps, workouts and journal that re-imports into NOOP on Mac, iPhone, or Android. On-device computed rows are marked APPROXIMATE in its Source column; the full backup stays the lossless restore path."))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2471,124 +2481,44 @@ struct SettingsView: View {
                 iphoneExpectations
                 #endif
 
-                // Check for updates — a single, user-initiated read of GitHub's public releases API.
-                // No background polling, no auto-update; sends nothing about you, just reads the version.
+                // Nutry ships this engine inside TestFlight. Do not send people to ryanbr/noop IPA builds.
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                    HStack(spacing: NoopMetrics.space2 + 2) {
-                        Button {
-                            // Compare the ACTUAL installed bundle version against GitHub's latest, not the
-                            // hand-maintained AppChangelog.currentVersion (which drifts stale and told v7
-                            // users they were behind, #697-adjacent). Mirrors Android's BuildConfig check.
-                            updateChecker.check(currentVersion: bundleVersionString)
-                        } label: {
-                            if updateChecker.state == .checking {
-                                HStack(spacing: NoopMetrics.space1 + 2) {
-                                    ProgressView().controlSize(.small)
-                                    Text("Checking…")
-                                }
-                            } else {
-                                Label("Check for updates", systemImage: "arrow.triangle.2.circlepath")
-                            }
-                        }
-                        .buttonStyle(NoopButtonStyle(.secondary))
-                        .disabled(updateChecker.state == .checking)
-
-                        if case .upToDate(let v) = updateChecker.state {
-                            Text("You're on the latest (\(v)).")
-                                .font(StrandFont.footnote)
-                                .foregroundStyle(StrandPalette.textSecondary)
-                        } else if case .failed = updateChecker.state {
-                            Text("Couldn't check. Try again.")
-                                .font(StrandFont.footnote)
-                                .foregroundStyle(StrandPalette.statusWarning)
-                        }
-                        Spacer()
-                    }
-
-                    // #1659: the automatic half. iOS cannot auto-update a sideloaded build at all — no API
-                    // lets an app install or re-sign an .ipa — so noticing and saying so is the whole of
-                    // what is possible. ON by default, because a sideloaded app has no store to tell the
-                    // user anything and a setting nobody finds is the feature not existing; switching it
-                    // off here stops the request entirely. See UpdateAvailability.defaultEnabled.
-                    Toggle(isOn: $autoCheckUpdates) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Check automatically")
-                                .font(StrandFont.subhead)
-                                .foregroundStyle(StrandPalette.textPrimary)
-                            Text("Once a day, NOOP asks GitHub for the latest version number and puts a note in Updates if there's a newer one. Nothing about you is sent, and it never installs anything.")
-                                .font(StrandFont.footnote)
-                                .foregroundStyle(StrandPalette.textSecondary)
-                        }
-                    }
-                    .tint(StrandPalette.accent)
-
-                    // Update available: show what's new, with a download straight to the release.
-                    if case .available(let v, let url, let notes) = updateChecker.state {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Version \(v) is available")
-                                    .font(StrandFont.subhead)
-                                    .foregroundStyle(StrandPalette.textPrimary)
-                                Spacer()
-                                NoopButton("Download", systemImage: "arrow.down.circle.fill", kind: .primary) {
-                                    openURL(url)
-                                }
-                            }
-                            if !notes.isEmpty {
-                                ScrollView {
-                                    Text(notes)
-                                        .font(StrandFont.footnote)
-                                        .foregroundStyle(StrandPalette.textSecondary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                #if os(iOS)
-                                // #697/#horizontal-swipe parity, see ScreenScaffold.
-                                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-                                #endif
-                                .frame(maxHeight: 150)
-                            }
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(StrandPalette.surfaceInset,
-                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(StrandPalette.accent.opacity(0.3), lineWidth: 1)
-                        )
-                    }
-
-                    Text("Checks the project's home (GitHub) for the latest version when you tap. Nothing else is sent.")
-                        .font(StrandFont.footnote)
-                        .foregroundStyle(StrandPalette.textTertiary)
-                }
-
-                // Project home — NOOP's code, releases, issues and wiki live on GitHub.
-                Link(destination: URL(string: "https://github.com/ryanbr/noop")!) {
                     HStack(spacing: 10) {
-                        Image(systemName: "chevron.left.forwardslash.chevron.right")
+                        Image(systemName: "airplane")
                             .foregroundStyle(StrandPalette.accent)
                             .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Project home & source")
-                                .font(StrandFont.body)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Nutry updates")
+                                .font(StrandFont.subhead)
                                 .foregroundStyle(StrandPalette.textPrimary)
-                            Text("GitHub: code, releases, issues and the wiki.")
+                            Text("This WHOOP page is powered by NOOP inside Nutry. Install updates from TestFlight — never from a separate NOOP IPA.")
                                 .font(StrandFont.footnote)
-                                .foregroundStyle(StrandPalette.textTertiary)
+                                .foregroundStyle(StrandPalette.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(StrandPalette.textTertiary)
-                            .accessibilityHidden(true)
                     }
-                    .contentShape(Rectangle())
                 }
-                .accessibilityLabel("Project home and source code on GitHub")
 
-                Text("A standalone companion for your WHOOP. Everything stays on this device: your history, your live stream, your numbers. Nothing is uploaded. NOOP is an independent, experimental project, not the WHOOP app.")
+                // Nutry: no outbound link to ryanbr/noop — updates are TestFlight-only.
+                HStack(spacing: 10) {
+                    Image(systemName: "lock.shield")
+                        .foregroundStyle(StrandPalette.accent)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Réseau verrouillé")
+                            .font(StrandFont.body)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                        Text("Aucun appel vers GitHub, WHOOP cloud ou une URL tierce. Seuls le serveur Nutry et le Bluetooth du bracelet sont autorisés.")
+                            .font(StrandFont.footnote)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                }
+                .accessibilityLabel("Réseau verrouillé Nutry")
+
+                Text("A standalone companion for your WHOOP. Everything stays on this device: your history, your live stream, your numbers. Nothing is uploaded to WHOOP. NOOP is an independent, experimental project, not the WHOOP app.")
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2693,7 +2623,7 @@ struct SettingsView: View {
                     .foregroundStyle(StrandPalette.textPrimary)
             }
 
-            iphoneExpectationLine(String(localized: "This is a sideloaded build, installed outside the App Store. It needs re-signing periodically: roughly every 7 days on a free Apple ID, about a year on a paid developer account."))
+            iphoneExpectationLine(String(localized: "This WHOOP experience is part of Nutry on TestFlight. Updates arrive with Nutry — do not install a separate NOOP IPA."))
             iphoneExpectationLine(String(localized: "After your iPhone reboots, unlock it once. Until you do, iOS keeps NOOP's files locked (Data Protection), so new history can't be written or synced."))
             iphoneExpectationLine(String(localized: "Background Bluetooth has OS limits: iOS may pause NOOP when it's not in the foreground, so keep it open while syncing a fresh strap."))
             iphoneExpectationLine(String(localized: "On a beta version of iOS, things can break that work on the release build."))
@@ -3247,7 +3177,7 @@ struct StepsCalibrationSheet: View {
                                 .frame(width: 52, alignment: .trailing)
                         }
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel("\(Self.shortDay(row.day)): estimated \(row.estimated) steps, phone \(row.actual) steps, \(Int(row.errorPct.rounded())) percent difference")
+                        .accessibilityLabel(String(localized: "\(Self.shortDay(row.day)): estimated \(row.estimated) steps, phone \(row.actual) steps, \(Int(row.errorPct.rounded())) percent difference"))
                     }
                     Text("These days are excluded from the estimate (your phone's real count is shown instead). They're here only so you can judge the estimate's accuracy.")
                         .font(StrandFont.caption)

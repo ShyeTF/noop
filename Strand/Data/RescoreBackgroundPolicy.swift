@@ -92,8 +92,18 @@ enum RescoreBackgroundPolicy {
                        isRealUpdate: Bool = true,
                        rescoreAlreadyOwed: Bool,
                        passInProgress: Bool = false,
-                       secondsSinceLastAttempt: Double? = nil) -> Decision {
+                       secondsSinceLastAttempt: Double? = nil,
+                       heavyWorkPaused: Bool = false,
+                       blockBackgroundAnalysis: Bool = false) -> Decision {
+        if heavyWorkPaused {
+            return .deferToBackgroundTask(
+                reason: "the phone is hot or in Low Power Mode")
+        }
         guard isBackground else { return .run }
+        if blockBackgroundAnalysis {
+            return .deferToBackgroundTask(
+                reason: "Nutry does not re-score while the phone is locked or backgrounded")
+        }
 
         guard isRealUpdate else {
             return .deferToBackgroundTask(

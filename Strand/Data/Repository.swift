@@ -751,7 +751,7 @@ final class Repository: ObservableObject {
         // on launch (RootView refresh, AppModel init, exploreSeries). ensureStore is async and `store`
         // is not set until after the `await WhoopStore(path:)` below, so without this guard every caller
         // races past the `if let store` check while the others are awaiting the open, and they ALL open a
-        // fresh connection and re-run quarantineIncompatibleDatabase (a thundering herd of DB opens on a
+        // fresh connection and re-run the open (a thundering herd of DB opens on a
         // large library at the worst moment). Cache the in-flight open Task so concurrent callers join it.
         if let storeOpenTask { return await storeOpenTask.value }
         let task = Task { [deviceId] () -> WhoopStore? in
@@ -2125,9 +2125,9 @@ final class Repository: ObservableObject {
             }.value
         case .skinTemp:
             let s = (try? await store.skinTempSamples(deviceId: source, from: from, to: to, limit: 200_000)) ?? []
+            let resolved = SkinTempPacket.family(samples: s, registry: family)
             return await Task.detached(priority: .utility) {
-                // #938: family-aware raw→°C — 5/MG centidegrees (raw/100, #156), 4.0 v24 raw ADC map.
-                s.map { Self.timelinePoint($0.ts, skinTempCelsius(raw: $0.raw, family: family)) }
+                s.map { Self.timelinePoint($0.ts, skinTempCelsius(raw: $0.raw, family: resolved)) }
             }.value
         case .respiration:
             // Two quantities share this table: a WHOOP's raw respiration ADC waveform (plotted verbatim,

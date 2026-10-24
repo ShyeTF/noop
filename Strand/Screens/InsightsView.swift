@@ -630,7 +630,7 @@ struct InsightsView: View {
                         .font(StrandFont.headline)
                         .foregroundStyle(StrandPalette.textPrimary)
                         .lineLimit(2)
-                    Text("Started \(snapshot.startDay) · testing \(snapshot.outcome.outcomeName.lowercased())")
+                    Text(String(localized: "Started \(snapshot.startDay) · testing \(snapshot.outcome.outcomeName.lowercased())"))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -675,7 +675,7 @@ struct InsightsView: View {
                     .accessibilityLabel("Experiment progress")
                     .accessibilityValue("\(snapshot.daysElapsed) of \(snapshot.durationDays) days")
                 HStack {
-                    Text("\(snapshot.daysElapsed) of \(snapshot.durationDays) days")
+                    Text(String(localized: "\(snapshot.daysElapsed) of \(snapshot.durationDays) days"))
                     Spacer()
                     StatePill(LocalizedStringKey(snapshot.confidence.label),
                               tone: snapshot.confidence.tone,

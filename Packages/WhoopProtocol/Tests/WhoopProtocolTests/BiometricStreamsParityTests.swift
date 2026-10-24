@@ -54,7 +54,7 @@ final class BiometricStreamsParityTests: XCTestCase {
         XCTAssertEqual(s.hr, gold.hr.map { HRSample(ts: $0.ts, bpm: $0.bpm) })
         XCTAssertEqual(s.rr, gold.rr.map { RRInterval(ts: $0.ts, rrMs: $0.rr_ms) })
         XCTAssertEqual(s.spo2, gold.spo2.map { SpO2Sample(ts: $0.ts, red: $0.red, ir: $0.ir, unit: $0.unit) })
-        XCTAssertEqual(s.skinTemp, gold.skin_temp.map { SkinTempSample(ts: $0.ts, raw: $0.raw, unit: $0.unit) })
+        XCTAssertEqual(s.skinTemp, gold.skin_temp.map { SkinTempSample(ts: $0.ts, raw: $0.raw, unit: $0.unit, layoutVersion: 24) })
         XCTAssertEqual(s.resp, gold.resp.map { RespSample(ts: $0.ts, raw: $0.raw, unit: $0.unit) })
         XCTAssertEqual(s.gravity, gold.gravity.map {
             GravitySample(ts: $0.ts, x: $0.x, y: $0.y, z: $0.z, unit: $0.unit) })

@@ -118,7 +118,7 @@ struct CaffeineLogCard: View {
                         .labelsHidden()
                         .accessibilityLabel("Bedtime")
                 }
-                Text("Stop caffeine after about \(cutoffTimeLabel) to keep most of it cleared by \(timeLabel(bedtimeMinutes)).")
+                Text(String(localized: "Stop caffeine after about \(cutoffTimeLabel) to keep most of it cleared by \(timeLabel(bedtimeMinutes))."))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -292,7 +292,7 @@ struct CaffeineLogCard: View {
                             .foregroundStyle(StrandPalette.statusCritical)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Remove caffeine intake at \(Self.timeFormatter.string(from: intake.at))")
+                    .accessibilityLabel(String(localized: "Remove caffeine intake at \(Self.timeFormatter.string(from: intake.at))"))
                 }
             }
         }

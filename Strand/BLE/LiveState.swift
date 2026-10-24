@@ -89,6 +89,9 @@ public final class LiveState: ObservableObject {
     /// under a WHOOP heading. Which of the two a surface needs depends on what it claims to be showing,
     /// and that is a question about the label rather than about this field.
     @Published public var batteryPct: Double? = nil
+    /// Unix time of the last `setBattery` call. Not cleared on disconnect: the 24 h
+    /// presentation rule needs the real read time after the link drops.
+    @Published public private(set) var batteryReadAtUnix: TimeInterval?
     /// Strap battery pack VOLTAGE (mV), decoded from the ~8-min BATTERY_LEVEL event (mv@21/@25) and the
     /// GET_EXTENDED_BATTERY_INFO response (#592). Shown on the Devices card as a "x.xx V" readout beside the
     /// percent; nil until the first battery event lands. Twin of the Android LiveState.batteryMv.
@@ -125,7 +128,14 @@ public final class LiveState: ObservableObject {
     ///
     /// nil until the first event of a session; cleared on disconnect so a stale flag can't outlive the
     /// link. Flag ONLY — the battery % keeps its family-specific source (#77).
+    /// Event 109 must never write this. Pack presence is `packPresent`.
     @Published public var charging: Bool? = nil
+
+    /// External pack state of charge, percent, from event 109 (tenths already converted). Live only.
+    /// Cleared on event 22, on `present == false`, on disconnect, and ten minutes after the last 109.
+    @Published public var packSocPct: Double? = nil
+    /// True after a live (or fresh) pack-attached edge, until removal or disconnect.
+    @Published public var packPresent: Bool = false
 
     /// The Oura ring's current wear/charge state (nil for non-Oura straps or before any evidence this
     /// session). Driven by OuraLiveSource from the live-HR push + the ring's STATE charger strings: a live
@@ -326,6 +336,34 @@ public final class LiveState: ObservableObject {
     /// window can't outlive the link.
     public func clearStrapRange() { strapRange = nil }
 
+    // MARK: - #223 (Nutry) — history-drain coverage, for the sync percentage
+
+    /// The record window this history DRAIN has actually received (`Backfiller.drainOldestUnix` /
+    /// `drainNewestUnix`), republished on every acked chunk. Nutry turns it into a percentage against
+    /// the strap-reported newest: the protocol never announces a total record count, so temporal
+    /// coverage is the only honest measure (`NutryWhoopSyncProgressRules`).
+    ///
+    /// NOT `@Published`, deliberately, for the same reason as `lastFrameAtUnix` (#2547): a published
+    /// write per chunk would invalidate every observer of this one `ObservableObject`. The chunk ack
+    /// already bumps `syncChunksThisSession`, which IS published, so a reader refreshes on that and
+    /// reads this synchronously. Cleared with the other live readouts in `clearBiometrics`.
+    public struct HistoryCoverage: Equatable, Sendable {
+        public var oldestUnix: Int
+        public var newestUnix: Int
+        public init(oldestUnix: Int, newestUnix: Int) {
+            self.oldestUnix = oldestUnix; self.newestUnix = newestUnix
+        }
+    }
+    public private(set) var historyCoverage: HistoryCoverage?
+
+    /// Bank the drain's received window. A chunk that persisted no dated record leaves it untouched.
+    public func setHistoryCoverage(oldestUnix: Int?, newestUnix: Int?) {
+        guard let oldest = oldestUnix, let newest = newestUnix, newest >= oldest else { return }
+        historyCoverage = HistoryCoverage(oldestUnix: oldest, newestUnix: newest)
+    }
+
+    public func clearHistoryCoverage() { historyCoverage = nil }
+
     @Published public var lastFrameType: String? = nil
     @Published public var lastEvent: String? = nil
     /// #987: unix of the most recent strap frame FrameRouter routed. Deliberately NOT @Published - the
@@ -334,6 +372,16 @@ public final class LiveState: ObservableObject {
     /// Connection readout reads it on its own render cadence, which is plenty for a freshness label.
     /// Cleared with the other live readouts in clearBiometrics so it can't outlive the link.
     public private(set) var lastFrameAtUnix: Int?
+    /// Unix second of the last readable heart-rate sample (standard 0x2A37 or realtime frame).
+    /// Not published: the link badge reads it on its own cadence. Cleared with the other live clocks.
+    public private(set) var lastHeartAtUnix: Int?
+    /// Bumped on every readable sample, including a steady BPM that does not republish `heartRate`.
+    @Published public private(set) var heartSampleSeq = 0
+    /// Unix second of the last standard heart-rate notification, readable or not.
+    /// Keeps the link badge live when the strap is connected but off the wrist.
+    public private(set) var lastLinkAtUnix: Int?
+    /// `CBManagerState.rawValue`. Published so the link badge refreshes when the radio changes.
+    @Published public var centralStateRaw: Int = 0
 
     /// Stamp the last-frame instant (#987). One plain Int write per routed frame; called by FrameRouter
     /// after the CRC guard so bad bytes never count as liveness.
@@ -548,6 +596,11 @@ public final class LiveState: ObservableObject {
     /// came — i.e. caught up). Drives the sync tile + the staleness nudge.
     @Published public var lastSyncedAt: TimeInterval?
 
+    /// Wall time of the last pass that stored sensor rows, whatever ended it (complete, timeout,
+    /// abort, disconnect). Process-local on purpose: a WHOOP 4.0 often ends a productive night on
+    /// the idle timeout, and that pass must still ask for a rescore. Not a UserDefaults key.
+    @Published public var lastBankedAt: TimeInterval?
+
     /// Set when an offload ended abnormally (the idle watchdog fired — the strap went quiet mid-sync),
     /// so a stalled history download isn't silent. Cleared by the next successful HISTORY_COMPLETE.
     /// Process-local on purpose (mirrors Android, ed6a31d): the next connect / 15-min tick re-offloads
@@ -557,6 +610,10 @@ public final class LiveState: ObservableObject {
     /// True while a historical offload session is running, so screens can say "Syncing strap
     /// history…" instead of presenting half-loaded data as final (#77).
     @Published public var backfilling = false
+    /// True from a manual refresh until that chain stops (strap empty, cap, abort, disconnect).
+    /// Between slices `backfilling` is briefly false; this keeps the badge on Synchro.
+    /// Process-local: not a UserDefaults key.
+    @Published public var historyDraining = false
     /// #1164 — true when the strap reports banked records newer than our local HR frontier (the strap has
     /// data we haven't ingested yet), even when no offload is actively running. Set by BLEManager from the
     /// GET_DATA_RANGE newest vs. the collector's latest HR sample, with the same 5-min `behindGapSeconds`
@@ -625,8 +682,10 @@ public final class LiveState: ObservableObject {
     /// Single funnel for battery readings — updates the published value AND notifies the hook,
     /// so both write sites (FrameRouter, BLEManager) drive the alert monitor identically.
     public func setBattery(_ pct: Double) {
+        let now = Date().timeIntervalSince1970
+        batteryReadAtUnix = now
         batteryPct = pct
-        bankBatterySample(pct)
+        bankBatterySample(pct, now: Int(now))
         onBatteryUpdate?(pct)
     }
 
@@ -717,10 +776,17 @@ public final class LiveState: ObservableObject {
     private var heartRateSilenceTimer: DispatchSourceTimer?
     private var heartRateSilenceArmedAt: DispatchTime?
 
+    /// A standard 0x2A37 notification arrived, before any readability check.
+    public func noteStandardHeartNotify(now unix: Int = Int(Date().timeIntervalSince1970)) {
+        lastLinkAtUnix = unix
+    }
+
     /// A readable heart-rate sample arrived (`BLEManager`'s standard profile, `FrameRouter`'s realtime frames): move the
     /// silence deadline on. One timer, rescheduled at most every tenth of the wait (once a second in use), so it costs
-    /// nothing while samples flow and fires once when they stop.
-    public func noteReadableHeartRate() {
+    /// nothing while samples flow and fires once when they stop. `heartSampleSeq` still advances on every call.
+    public func noteReadableHeartRate(now unix: Int = Int(Date().timeIntervalSince1970)) {
+        lastHeartAtUnix = unix
+        heartSampleSeq += 1
         let now = DispatchTime.now()
         let rearmNanos = UInt64(heartRateSilence / 10 * 1_000_000_000)
         if let armed = heartRateSilenceArmedAt, now.uptimeNanoseconds &- armed.uptimeNanoseconds < rearmNanos { return }
@@ -754,7 +820,10 @@ public final class LiveState: ObservableObject {
         recentHrSamples.removeAll()       // Sleep readout buffers must not outlive the link (Group E)
         recentGravitySamples.removeAll()
         clearStrapRange()                 // a stale clock-drift window must not outlive the link either
+        clearHistoryCoverage()            // #223: nor a stale drain coverage (the sync percentage)
         lastFrameAtUnix = nil             // #987: a stale "last frame" freshness must not outlive it either
+        lastHeartAtUnix = nil
+        lastLinkAtUnix = nil
         ouraWearState = nil               // a stale worn/charging badge must not outlive the link either
         ouraBatteryPct = nil              // nor a stale ring charge (#2075)
     }
@@ -1164,14 +1233,14 @@ public final class LiveState: ObservableObject {
     /// OS, and — on iOS — the environment diagnostics that actually cause issues, followed by the live
     /// session log. Shared so BOTH the Live screen's log card AND a macOS Settings shortcut (#507 — a 4.0
     /// owner couldn't find the log on Mac) build the SAME text. Call on the main thread (button taps).
-    func exportableLogText(extraHeaderLines: [String] = []) -> String {
-        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    func exportableLogText(extraHeaderLines: [String] = [], title: String? = nil) -> String {
         #if os(iOS)
         let osName = "iOS"
         #else
         let osName = "macOS"
         #endif
-        var header = "NOOP strap log - \(osName)\nApp: \(Self.appIdentityLine)\n\(osName): "
+        let heading = title ?? "NOOP strap log - \(osName)"
+        var header = "\(heading)\nApp: \(Self.appIdentityLine)\n\(osName): "
             + ProcessInfo.processInfo.operatingSystemVersionString + "\n"
         #if os(iOS)
         let diagLines = IOSDiagnostics.capture().summaryLines()

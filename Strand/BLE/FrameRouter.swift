@@ -34,6 +34,8 @@ public final class FrameRouter {
         didSet {
             rawDumpedRespCmds.removeAll(); loggedFirmwareGate = nil; deviceId = nil
             rejectTally = FrameRejectTally(); loggedRejectReasons.removeAll()
+            resetChargingCursor()
+            resetPackLink()
         }
     }
 
@@ -468,59 +470,35 @@ public final class FrameRouter {
                 if ev.hasPrefix("BLE_BONDED") {
                     state.bonded = true
                 }
-                // BATTERY_LEVEL events carry the only charging flag the strap reports (wire
-                // observation: u8 bit0, ~every 8 min on captured links). Flag only — battery %
-                // keeps its family-specific source (#77). No freshness gate needed here: this
-                // path never sees historical replay (backfill skips handle(frame:), see below).
-                if ev.hasPrefix("BATTERY_LEVEL"),
-                   let ch = parsed.parsed["battery_charging"]?.intValue {
-                    state.charging = (ch != 0)
+                // BATTERY_LEVEL carries charging (u8 bit0), pack mV and SoC. The family decoder is
+                // unchanged: 4.0 charge@26 / soc@17 / mV@21, 5.0 charge@30 / soc@21 / mV@25. 0x2A19
+                // stays percent-only. Events 5 and 6 are not charge edges, and a rising percent is
+                // never treated as charging. Live edges always apply. The older-timestamp gate is
+                // only for a fresh offload frame (`dispatchLiveGestureIfFresh`).
+                let eventTs = parsed.parsed["event_timestamp"]?.intValue
+                logFreshCharge(frame: frame, event: ev, duringOffload: false)
+                let liveNow = Int(Date().timeIntervalSince1970)
+                // CHARGING_ON(7) / CHARGING_OFF(8) flip the instant a pack goes on or comes off.
+                // BATTERY_PACK_CONNECTED(21) / REMOVED(22) lead those edges on a 5/MG. A 4.0 never
+                // sends 21/22. Event 109 is the pack gauge and must not write `charging`.
+                switch LiveEventDispatch.route(ev) {
+                case .batteryLevel:
+                    applyBatteryLevel(parsed, frame: frame, ts: eventTs, duringOffload: false, now: liveNow)
+                case .chargingOn:
+                    applyChargingEdge(.on, ts: eventTs, duringOffload: false, now: liveNow)
+                case .chargingOff:
+                    applyChargingEdge(.off, ts: eventTs, duringOffload: false, now: liveNow)
+                case .wristOn:
+                    handleWrist(on: true, duringSync: false)
+                case .wristOff:
+                    handleWrist(on: false, duringSync: false)
+                case .doubleTap, .packInfo, .other:
+                    break
                 }
-                // #592: the same battery event carries pack voltage (mv@21) — surface it on the Devices card.
-                if ev.hasPrefix("BATTERY_LEVEL"), let mv = parsed.parsed["battery_mV"]?.intValue {
-                    state.batteryMv = mv
-                }
-                // The same pushed BATTERY_LEVEL event also carries the real SoC% (soc@17/10, what history
-                // already banks) — drive the LIVE battery % from it too, not only from the polled
-                // GET_BATTERY_LEVEL command-response. Otherwise a stalled/late poll (or a fresh LiveState
-                // after relaunch) blanks the % to "—" while charging — read from THIS same event — keeps
-                // updating (the WHOOP 4.0 report). Live-only path (backfill skips this router), so no replay
-                // guard is needed; the family-specific #77 concern was the 0x2A19 stub, a different source.
-                if ev.hasPrefix("BATTERY_LEVEL"), let pct = parsed.parsed["battery_pct"]?.doubleValue {
-                    state.setBattery(pct)
-                }
-                // The strap raises CHARGING_ON(7)/CHARGING_OFF(8) the instant a pack goes on or comes off —
-                // flip the pill directly instead of waiting on the ~8-min BATTERY_LEVEL cadence above. Live-
-                // only like those blocks (backfill skips this router), so no replay guard is needed. Ported
-                // from tanarchytan/noop @72ac14d9. Twin of the Kotlin WhoopBleClient handler.
-                if ev.hasPrefix("CHARGING_ON") {
-                    state.charging = true
-                } else if ev.hasPrefix("CHARGING_OFF") {
-                    state.charging = false
-                }
-                // #1826: BATTERY_PACK_CONNECTED(21) / BATTERY_PACK_REMOVED(22), declared in the shared
-                // schema and handled on neither platform until @Zebsi235 measured them. On a 5/MG they
-                // fire on every attach and detach and LEAD the 7/8 edges above, so the pill responds when
-                // a pack goes on instead of waiting to catch a later edge. A WHOOP 4.0 never sends them.
-                //
-                // NO replay guard here, unlike the Kotlin twin. That is deliberate and not an omission:
-                // this router is live-only — the Backfiller holds no reference to it, so a replayed
-                // offload event never reaches this code, which is the same reason the CHARGING_ON/OFF
-                // branch above carries none. Android's EVENT routing does see replays, and its capture
-                // showed the strap re-sending these edges with byte-identical payloads, so the gate is
-                // load-bearing THERE. Copying it here would guard against something that cannot happen.
-                if ev.hasPrefix("BATTERY_PACK_CONNECTED") {
-                    state.charging = true
-                } else if ev.hasPrefix("BATTERY_PACK_REMOVED") {
-                    state.charging = false
-                }
+                applyPackEvent(ev, frame: frame, ts: eventTs ?? 0, duringOffload: false, now: liveNow)
                 // The other physical inputs the strap exposes — live only, as above. The double-tap
                 // was handled before the sync kick.
-                if ev.hasPrefix("WRIST_ON") {
-                    handleWrist(on: true, duringSync: false)
-                } else if ev.hasPrefix("WRIST_OFF") {
-                    handleWrist(on: false, duringSync: false)
-                } else if ev.hasPrefix("STRAP_DRIVEN_ALARM_EXECUTED") {
+                if ev.hasPrefix("STRAP_DRIVEN_ALARM_EXECUTED") {
                     // Fire observability (#401 close-out): Android has always logged this line
                     // (WhoopBleClient.handleFrame); iOS/macOS silently ran the callback, which is why a
                     // "did it actually buzz?" report could never be settled from a strap log ("log
@@ -834,13 +812,148 @@ public final class FrameRouter {
             }
             return
         }
-        if ev.hasPrefix("DOUBLE_TAP") {
+        switch LiveEventDispatch.route(ev) {
+        case .doubleTap:
             dispatchDoubleTapOnce(eventTimestamp: ts)
-        } else if ev.hasPrefix("WRIST_ON") {
+        case .wristOn:
             handleWrist(on: true, duringSync: true)
-        } else if ev.hasPrefix("WRIST_OFF") {
+        case .wristOff:
             handleWrist(on: false, duringSync: true)
+        case .chargingOn:
+            logFreshCharge(frame: frame, event: ev, duringOffload: true)
+            applyChargingEdge(.on, ts: ts, duringOffload: true, now: now)
+            applyPackEvent(ev, frame: frame, ts: ts, duringOffload: true, now: now)
+        case .chargingOff:
+            logFreshCharge(frame: frame, event: ev, duringOffload: true)
+            applyChargingEdge(.off, ts: ts, duringOffload: true, now: now)
+            applyPackEvent(ev, frame: frame, ts: ts, duringOffload: true, now: now)
+        case .batteryLevel:
+            logFreshCharge(frame: frame, event: ev, duringOffload: true)
+            applyBatteryLevel(parsed, frame: frame, ts: ts, duringOffload: true, now: now)
+        case .packInfo:
+            logFreshCharge(frame: frame, event: ev, duringOffload: true)
+            applyPackEvent(ev, frame: frame, ts: ts, duringOffload: true, now: now)
+        case .other:
+            break
         }
+    }
+
+    /// Newest charge-edge timestamp already applied. Used to reject an older offload replay.
+    /// A live edge does not consult it as a veto; it only moves the cursor forward.
+    private var lastAppliedChargingEventTs: Int = 0
+    private var chargeLogSlots: [Int: ChargeLogSlot] = [:]
+    private var pack = WhoopPackState()
+    private var packExpiry: Task<Void, Never>?
+
+    func resetChargingCursor() {
+        lastAppliedChargingEventTs = 0
+    }
+
+    /// New link, or the link dropped. A stale pack gauge must not outlive the strap.
+    func resetPackLink() {
+        packExpiry?.cancel()
+        packExpiry = nil
+        pack = WhoopPackState()
+        state.packSocPct = nil
+        state.packPresent = false
+    }
+
+    /// Charging bit, percent and voltage from one BATTERY_LEVEL event. The raw byte is read
+    /// before the decoder drops values above 1. Decoding of percent and voltage stays in `parseFrame`.
+    private func applyBatteryLevel(_ parsed: ParsedFrame, frame: [UInt8], ts: Int?, duringOffload: Bool, now: Int) {
+        let raw = LiveChargeDispatch.note(frame: frame, whoop5: family == .whoop5)?.chargeRaw
+            ?? parsed.parsed["battery_charging"]?.intValue
+        let effect = LiveChargeDispatch.effect(
+            kind: .battery(rawByte: raw),
+            eventTimestamp: ts,
+            now: now,
+            duringOffload: duringOffload,
+            lastAppliedTimestamp: lastAppliedChargingEventTs)
+        guard effect.apply else { return }
+        lastAppliedChargingEventTs = effect.cursor
+        if let charging = effect.charging {
+            state.charging = charging
+        }
+        if let mv = parsed.parsed["battery_mV"]?.intValue {
+            state.batteryMv = mv
+        }
+        if let pct = parsed.parsed["battery_pct"]?.doubleValue {
+            state.setBattery(pct)
+        }
+    }
+
+    private func applyChargingEdge(_ kind: LiveChargeKind, ts: Int?, duringOffload: Bool, now: Int) {
+        let effect = LiveChargeDispatch.effect(
+            kind: kind,
+            eventTimestamp: ts,
+            now: now,
+            duringOffload: duringOffload,
+            lastAppliedTimestamp: lastAppliedChargingEventTs)
+        guard effect.apply, let charging = effect.charging else { return }
+        lastAppliedChargingEventTs = effect.cursor
+        state.charging = charging
+    }
+
+    /// Event 109 (and 21/22 presence). Never writes the charging flag.
+    private func applyPackEvent(_ event: String, frame: [UInt8], ts: Int, duringOffload: Bool, now: Int) {
+        guard family == .whoop5 else { return }
+        let signal: WhoopPackSignal?
+        if LiveChargeDispatch.eventNumber(in: event) == BatteryPackInfo.packInfoEvent {
+            guard let info = BatteryPackInfo.decodeEventFrame(frame) else { return }
+            signal = .info(info, eventTimestamp: ts)
+        } else if event.hasPrefix("BATTERY_PACK_CONNECTED") {
+            signal = .attached(eventTimestamp: ts)
+        } else if event.hasPrefix("BATTERY_PACK_REMOVED") {
+            signal = .removed(eventTimestamp: ts)
+        } else {
+            signal = nil
+        }
+        guard let signal else { return }
+        let next = WhoopPackLive.reduce(
+            pack,
+            signal: signal,
+            now: now,
+            duringOffload: duringOffload,
+            wallNow: Date().timeIntervalSince1970)
+        guard next != pack else { return }
+        pack = next
+        state.packSocPct = next.socPct
+        state.packPresent = next.present
+        if next.lastInfoWall != nil {
+            armPackExpiry()
+        } else {
+            packExpiry?.cancel()
+            packExpiry = nil
+        }
+    }
+
+    private func armPackExpiry() {
+        packExpiry?.cancel()
+        packExpiry = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(WhoopPackLive.staleAfter * 1_000_000_000))
+            guard let self, Task.isCancelled == false else { return }
+            let expired = WhoopPackLive.expire(self.pack, wallNow: Date().timeIntervalSince1970)
+            guard expired != self.pack else { return }
+            self.pack = expired
+            self.state.packSocPct = expired.socPct
+            self.state.packPresent = expired.present
+            self.packExpiry = nil
+        }
+    }
+
+    /// Strap log for a live or just-rescued charge/pack event. Always on: at most one line per
+    /// event type every 10 s, plus a line whenever the logged byte changes. The full hex,
+    /// including historical replays, stays in `puffin-events.jsonl`.
+    private func logFreshCharge(frame: [UInt8], event: String, duringOffload: Bool) {
+        guard let number = LiveChargeDispatch.eventNumber(in: event),
+              LiveChargeDispatch.loggedEvents.contains(number) else { return }
+        let raw = LiveChargeDispatch.note(frame: frame, whoop5: family == .whoop5)?.chargeRaw
+        let now = Date().timeIntervalSince1970
+        guard ChargeLogGate.shouldWrite(value: raw, now: now, slot: chargeLogSlots[number]) else { return }
+        chargeLogSlots[number] = ChargeLogSlot(lastAt: now, lastValue: raw)
+        let byte = raw.map(String.init) ?? "-"
+        let whereText = duringOffload ? "during a sync" : "live"
+        state.append(log: "Charge raw: event=\(number) byte=\(byte) \(whereText) hex=\(BatteryPackInfo.redactedHex(frame))")
     }
 
     /// A live WRIST_ON / WRIST_OFF, from either route. Each one leaves a line, always on: whether a strap sends them

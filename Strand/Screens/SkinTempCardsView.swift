@@ -165,7 +165,7 @@ struct CycleAwarenessCard: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(hue)
                 .accessibilityHidden(true)
-            Text("A period is likely between \(prettyDay(window.earliestDay)) and \(prettyDay(window.latestDay)) (a window, not a fixed date).")
+            Text(String(localized: "A period is likely between \(prettyDay(window.earliestDay)) and \(prettyDay(window.latestDay)) (a window, not a fixed date)."))
                 .font(StrandFont.subhead)
                 .foregroundStyle(StrandPalette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -327,7 +327,7 @@ struct MenstrualCycleHomeCard: View {
                                     // Return `Text` from each branch so the literal is a LocalizedStringKey
                                     // (`~day %lld` / `~day %lld-%lld`); a ternary of Strings would take the
                                     // verbatim `Text(_:)` init and ship English regardless of locale.
-                                    (lo == hi ? Text("~day \(lo)") : Text("~day \(lo)-\(hi)"))
+                                    (lo == hi ? Text(String(localized: "~day \(lo)")) : Text(String(localized: "~day \(lo)-\(hi)")))
                                         .font(StrandFont.bodyNumber)
                                         .foregroundStyle(StrandPalette.textSecondary)
                                 }
@@ -511,7 +511,7 @@ struct CycleTrackerView: View {
                     if let lo = result.cycleDayLow, let hi = result.cycleDayHigh {
                         // `Text` per branch → localized (`~day %lld` / `~day %lld-%lld`); a String ternary
                         // would take the verbatim init and never localize.
-                        (lo == hi ? Text("~day \(lo)") : Text("~day \(lo)-\(hi)"))
+                        (lo == hi ? Text(String(localized: "~day \(lo)")) : Text(String(localized: "~day \(lo)-\(hi)")))
                             .font(StrandFont.bodyNumber)
                             .foregroundStyle(StrandPalette.textSecondary)
                     }
@@ -528,7 +528,7 @@ struct CycleTrackerView: View {
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                 if let window = result.nextPeriodWindow {
-                    Text("Likely period window: \(prettyDay(window.earliestDay))-\(prettyDay(window.latestDay)). This is a range, not a fixed date.")
+                    Text(String(localized: "Likely period window: \(prettyDay(window.earliestDay))-\(prettyDay(window.latestDay)). This is a range, not a fixed date."))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -649,7 +649,7 @@ struct BodyClockCard: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(hue)
                         .accessibilityHidden(true)
-                    Text("Estimated body-clock low around \(clockString(estimate.tempMinHour))")
+                    Text(String(localized: "Estimated body-clock low around \(clockString(estimate.tempMinHour))"))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -697,10 +697,10 @@ struct BodyClockCard: View {
 
     private func planSummary(_ plan: CircadianEngine.JetLagPlan, firstDay: CircadianEngine.DayPlan) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Plan · \(plan.estimatedDays)-day shift")
+            Text(String(localized: "Plan · \(plan.estimatedDays)-day shift"))
                 .strandOverline()
             // Day 1's concrete light + lights-out cue — light + sleep timing only.
-            Text("Day 1: bright light \(clockString(firstDay.brightLightStartHour))-\(clockString(firstDay.brightLightEndHour)), lights-out around \(clockString(firstDay.targetSleepHour)).")
+            Text(String(localized: "Day 1: bright light \(clockString(firstDay.brightLightStartHour))-\(clockString(firstDay.brightLightEndHour)), lights-out around \(clockString(firstDay.targetSleepHour))."))
                 .font(StrandFont.subhead)
                 .foregroundStyle(StrandPalette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

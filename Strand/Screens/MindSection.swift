@@ -108,7 +108,7 @@ struct MindSection: View {
         }
         // Liquid tap response: the same physical settle-inward every tappable liquid control gets.
         .buttonStyle(LiquidPressStyle())
-        .accessibilityLabel("\(MoodStore.label(for: value)), mood \(value) of 5")
+        .accessibilityLabel(String(localized: "\(MoodStore.label(for: value)), mood \(value) of 5"))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -125,7 +125,7 @@ struct MindSection: View {
                     .foregroundStyle(StrandPalette.textPrimary)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Today's mood: \(MoodStore.label(for: mood)), \(mood) of 5")
+            .accessibilityLabel(String(localized: "Today's mood: \(MoodStore.label(for: mood)), \(mood) of 5"))
             Spacer()
             Button("Edit") { editing = true }
                 .buttonStyle(.plain)
@@ -151,7 +151,7 @@ struct MindSection: View {
 
     private var insightsCard: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
-            Text("What tracks your mood (\(moodDayCount) check-ins)")
+            Text(String(localized: "What tracks your mood (\(moodDayCount) check-ins)"))
                 .strandOverline()
             // Each correlation as its own frosted Rest-tinted insight card. The indigo wash is
             // calm and carries no valence — a link is just a link, never framed as good or bad.

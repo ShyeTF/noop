@@ -492,7 +492,7 @@ struct CompareView: View {
                 }
                 .padding(.vertical, 7)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(s.metric.title), range \(s.metric.format(s.realMin, effortScale: effortScale)) to \(s.metric.format(s.realMax, effortScale: effortScale))")
+                .accessibilityLabel(String(localized: "\(s.metric.title), range \(s.metric.format(s.realMin, effortScale: effortScale)) to \(s.metric.format(s.realMax, effortScale: effortScale))"))
                 if idx < series.count - 1 {
                     Divider().overlay(StrandPalette.hairline)
                 }
@@ -570,7 +570,7 @@ struct CompareView: View {
 
             if pairs.isEmpty {
                 NoopCard {
-                    Text("Not enough overlapping days between these metrics in \(range.phrase). Widen the range.")
+                    Text(String(localized: "Not enough overlapping days between these metrics in \(range.phrase). Widen the range."))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -609,7 +609,7 @@ struct CompareView: View {
                         .foregroundStyle(StrandPalette.textPrimary)
                     Spacer()
                     TrendChip(text: signedR(p.r), color: tint)
-                    Text("r = \(signedR(p.r))")
+                    Text(String(localized: "r = \(signedR(p.r))"))
                         .font(StrandFont.number(18))
                         .foregroundStyle(tint)
                 }
@@ -624,13 +624,13 @@ struct CompareView: View {
                 LiquidTube(frac: min(abs(p.r), 1), tint: tint, height: 8, animated: false)
                     .accessibilityHidden(true)
 
-                Text("\(p.n) overlapping days · \(strengthWord(p.r)) \(directionWord(p.r)) correlation")
+                Text(String(localized: "\(p.n) overlapping days · \(strengthWord(p.r)) \(directionWord(p.r)) correlation"))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(p.a.metric.title) versus \(p.b.metric.title), r equals \(String(format: "%.2f", p.r)), \(p.n) days")
+        .accessibilityLabel(String(localized: "\(p.a.metric.title) versus \(p.b.metric.title), r equals \(String(format: "%.2f", p.r)), \(p.n) days"))
     }
 
     // MARK: - Insight language
@@ -704,7 +704,7 @@ private struct FlowChips: View {
                             .foregroundStyle(StrandPalette.textTertiary)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Remove \(metric.title)")
+                    .accessibilityLabel(String(localized: "Remove \(metric.title)"))
                 }
                 .padding(.horizontal, 11)
                 .padding(.vertical, 8)

@@ -1121,7 +1121,7 @@ struct SleepView: View {
         let pct = Int((coverage * 100).rounded(.down))
         return HStack(alignment: .top, spacing: 8) {
             SourceBadge("Partly recorded", tint: StrandPalette.statusWarning)
-            Text("Only \(pct)% of this night's window has stage data. The stage totals cover only that part of the night.")
+            Text(String(localized: "Only \(pct)% of this night's window has stage data. The stage totals cover only that part of the night."))
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1305,7 +1305,7 @@ struct SleepView: View {
             .frame(height: 34)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Sleep stage breakdown: deep \(stageSharePercent(.deep, s)) percent, light \(stageSharePercent(.light, s)) percent, REM \(stageSharePercent(.rem, s)) percent, awake \(stageSharePercent(.awake, s)) percent")
+            .accessibilityLabel(String(localized: "Sleep stage breakdown: deep \(stageSharePercent(.deep, s)) percent, light \(stageSharePercent(.light, s)) percent, REM \(stageSharePercent(.rem, s)) percent, awake \(stageSharePercent(.awake, s)) percent"))
             HStack(spacing: 16) {
                 legend(.deep, String(localized: "Deep"))
                 legend(.light, String(localized: "Light"))
@@ -1410,7 +1410,7 @@ struct SleepView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(stage.label): \(durationText(minutes)), \(percent) percent of the night")
+        .accessibilityLabel(String(localized: "\(stage.label): \(durationText(minutes)), \(percent) percent of the night"))
         .accessibilityHint("Highlights this stage on the sleep chart")
         .accessibilityAddTraits(.isButton)
     }
@@ -1484,7 +1484,7 @@ struct SleepView: View {
                     .tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.textTertiary)
                 if let t = stageTypical(nil) {
-                    Text("typically \(durationText(t.mean))")
+                    Text(String(localized: "typically \(durationText(t.mean))"))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -1498,7 +1498,7 @@ struct SleepView: View {
                     .tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.textTertiary)
                 if let t = restorativeTypical() {
-                    Text("typically \(durationText(t))")
+                    Text(String(localized: "typically \(durationText(t))"))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -1519,12 +1519,12 @@ struct SleepView: View {
                     : (minutes < t.lo ? String(localized: "below your usual")
                                       : String(localized: "about your usual"))
                 (Text(sel.label).fontWeight(.semibold).foregroundColor(StrandPalette.sleepStageColor(sel))
-                    + Text(" \(durationText(minutes)) · typically \(durationText(t.lo)) to \(durationText(t.hi)), \(phrase)."))
+                    + Text(String(localized: " \(durationText(minutes)) · typically \(durationText(t.lo)) to \(durationText(t.hi)), \(phrase).")))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .lineLimit(2)
             } else {
-                Text("\(sel.label): \(durationText(minutes)). Not enough history yet for a typical range.")
+                Text(String(localized: "\(sel.label): \(durationText(minutes)). Not enough history yet for a typical range."))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .lineLimit(2)
@@ -1640,7 +1640,7 @@ struct SleepView: View {
             withAnimation(StrandMotion.fade) { selectedStage = isSelected ? nil : stage }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(stage.label): \(durationText(minutes)), \(percent) percent of the night")
+        .accessibilityLabel(String(localized: "\(stage.label): \(durationText(minutes)), \(percent) percent of the night"))
         .accessibilityHint("Highlights this stage on the sleep chart")
         .accessibilityAddTraits(.isButton)
     }

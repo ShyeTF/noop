@@ -157,7 +157,7 @@ struct JournalLogCard: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(group.title), \(groupItems.count) items, \(collapsed ? "collapsed" : "expanded")")
+                .accessibilityLabel(String(localized: "\(group.title), \(groupItems.count) items, \(collapsed ? "collapsed" : "expanded")"))
 
                 if !collapsed {
                     ForEach(groupItems) { item in itemRow(item) }
@@ -211,7 +211,7 @@ struct JournalLogCard: View {
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear \(item.display)")
+                .accessibilityLabel(String(localized: "Clear \(item.display)"))
             }
         }
     }
@@ -263,7 +263,7 @@ struct JournalLogCard: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .accessibilityLabel("Edit \(item.display)")
+                .accessibilityLabel(String(localized: "Edit \(item.display)"))
 
                 removeButton(item)
             }

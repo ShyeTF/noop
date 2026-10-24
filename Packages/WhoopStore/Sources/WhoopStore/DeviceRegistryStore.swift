@@ -156,6 +156,10 @@ public struct DeviceRegistryStore: Sendable {
         // v31-deep-capture-channels: the banked 5/MG v18 auxiliary fields are deviceId-keyed per-second
         // rows like every stream above, so a "delete all of this device's data" must clear them too.
         "v18AuxSample",
+        // Kept on disk (Nutry does not drop it). Absent on installs that already applied the old
+        // drop; deleteAllData skips a missing table.
+        "rawImuSample",
+        "rrInterval_v24_legacy",
         // v38-apple-step-hour: the hourly Apple Health step buckets are deviceId-keyed ("apple-health"),
         // so forgetting that source must clear them — otherwise an imported phone's hour-by-hour step
         // history survives the delete (the same privacy defect this list exists to close).
@@ -169,14 +173,22 @@ public struct DeviceRegistryStore: Sendable {
         "liftExercise", "liftProgram", "liftProgramItem", "liftSession", "liftSet",
     ]
 
+    /// Tables from `deviceScopedTables` that exist in this file. A Nutry install that already
+    /// applied an older migration may lack `rawImuSample` or `rrInterval_v24_legacy`; skipping
+    /// them keeps a user-initiated delete from throwing, without removing any other history.
+    private static func presentDeviceTables(_ db: Database) throws -> [String] {
+        let present = try Set(String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE type = 'table'"))
+        return deviceScopedTables.filter { present.contains($0) }
+    }
+
     /// Permanently delete every recorded sample/derived row belonging to one device, across all
     /// `deviceId`-keyed tables, in a single transaction (all-or-nothing). The `pairedDevice` registry
     /// row is left intact — the caller archives/removes that separately. Tables are deleted defensively
-    /// with `DELETE FROM <table> WHERE deviceId = ?`; a missing table would throw, but every table here
-    /// is created unconditionally by the migrator, so the set is stable.
+    /// with `DELETE FROM <table> WHERE deviceId = ?` on tables that exist. A missing legacy table
+    /// is skipped so an older install does not throw.
     public func deleteAllData(deviceId: String) throws {
         try dbQueue.write { db in
-            for table in Self.deviceScopedTables {
+            for table in try Self.presentDeviceTables(db) {
                 try db.execute(sql: "DELETE FROM \(table) WHERE deviceId = ?", arguments: [deviceId])
             }
             // Provenance also references the physical/import source separately from its computed
@@ -232,8 +244,9 @@ public struct DeviceRegistryStore: Sendable {
             // history under an id nothing reads again: the orphaned-history failure this adoption exists
             // to PREVENT, displaced onto the computed half. The ring path never hit it because a ring has
             // no computed sibling to strand, which is why the shipped migration looked proven.
+            let tables = try Self.presentDeviceTables(db)
             for (from, to) in [(activeId, serialId), (activeId + Self.computedSuffix, serialId + Self.computedSuffix)] {
-                for table in Self.deviceScopedTables {
+                for table in tables {
                     try db.execute(sql: "UPDATE OR IGNORE \(table) SET deviceId = ? WHERE deviceId = ?", arguments: [to, from])
                     try db.execute(sql: "DELETE FROM \(table) WHERE deviceId = ?", arguments: [from])
                 }

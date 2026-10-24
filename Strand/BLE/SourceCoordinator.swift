@@ -281,8 +281,13 @@ final class SourceCoordinator: ObservableObject {
         // scan is the fallback only when the registry row has no/invalid identifier.
         if let pid = peripheralId(for: id), let uuid = UUID(uuidString: pid) {
             source.connect(uuid)
-        } else {
+        } else if NutryWhoopPairingGate.allowsPairingScan() {
+            // #221: a registered row with no Bluetooth identity has nothing to connect TO, so this is a
+            // blind service scan. It never adopts anything on its own (each source only connects its own
+            // `pendingConnectID`), but Nutry still does not open the radio for it outside a pairing screen.
             source.scan()
+        } else {
+            straplog("Source \(id): no Bluetooth identity recorded — not scanning outside the pairing screen (221)")
         }
         activeSource = source
         activeStrapId = id
@@ -553,6 +558,15 @@ final class SourceCoordinator: ObservableObject {
         let activeId = registry.activeDeviceId
         guard isWhoop(activeId),
               let device = registry.devices.first(where: { $0.id == activeId }) else { return }
+
+        // #221 (privacy): this `setPeripheralId` is the write that made a strap Nutry had captured BY ITSELF
+        // look paired for good — the registry identity is what `hasAdoptedBleIdentity`, « Appairé » and the
+        // auto-reconnect flag are all read off. The engine can no longer connect an unassociated strap, but
+        // the adoption refuses one too, so no second path can re-create the state.
+        guard NutryWhoopPairingGate.allowsIdentityAdoption(of: uuid) else {
+            live.append(log: "Identité Bluetooth \(uuid) ignorée : ce bracelet n’a pas été associé dans Nutry (221).")
+            return
+        }
 
         switch device.peripheralId {
         case .none:

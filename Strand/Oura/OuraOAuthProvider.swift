@@ -37,6 +37,10 @@ final class OuraOAuthProvider: NSObject, AuthProvider, ASWebAuthenticationPresen
 
     @MainActor
     func authorize(presentationAnchor: ASPresentationAnchor) async throws {
+        if NutryHostedEgress.isEmbeddedInNutry {
+            throw OuraError.network(
+                NutryHostedEgress.denyNOOPOutbound(feature: "Oura OAuth").localizedDescription)
+        }
         self.anchor = presentationAnchor
         let state = UUID().uuidString
         let url = OuraOAuth.authorizeURL(credentials: credentials, state: state)
@@ -63,6 +67,10 @@ final class OuraOAuthProvider: NSObject, AuthProvider, ASWebAuthenticationPresen
 
     /// POST a token request and parse the response (shared by exchange + refresh).
     private func exchange(_ req: URLRequest) async throws -> OuraTokens {
+        if NutryHostedEgress.isEmbeddedInNutry {
+            throw OuraError.network(
+                NutryHostedEgress.denyNOOPOutbound(feature: "Oura OAuth").localizedDescription)
+        }
         let (data, resp): (Data, URLResponse)
         do { (data, resp) = try await session.data(for: req) }
         catch { throw OuraError.network(error.localizedDescription) }

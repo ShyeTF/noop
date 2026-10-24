@@ -167,6 +167,11 @@ enum AIProvider: String, CaseIterable, Identifiable {
     /// with an actionable message on rejection. Called by `CustomClient.send` + `fetchModels`, i.e. on
     /// BOTH Custom network paths (mirrors Kotlin `customChatUrl` / `customModelsUrl`).
     static func guardCustomBaseURL() throws {
+        if NutryHostedEgress.isEmbeddedInNutry {
+            throw AICoachError.badCustomURL(
+                NutryHostedEgress.denyNOOPOutbound(feature: "export / webhook HTTP personnalisé")
+                    .localizedDescription)
+        }
         let base = customBaseURL   // already trimmed / trailing-slash-stripped by the accessor
         guard let comps = URLComponents(string: base),
               let host = comps.host, !host.isEmpty,
@@ -313,6 +318,12 @@ extension AIProviderClient {
 
 /// Execute a request, map HTTP status codes to `AICoachError`, return the decoded JSON object.
 func performRequest(_ req: URLRequest, session: URLSession) async throws -> [String: Any] {
+    // Nutry: the WHOOP page must never reach OpenAI / Anthropic / Gemini / custom URLs.
+    if NutryHostedEgress.isEmbeddedInNutry {
+        throw AICoachError.network(
+            NutryHostedEgress.denyNOOPOutbound(feature: "AI Coach").localizedDescription)
+    }
+
     let data: Data
     let response: URLResponse
 
@@ -375,6 +386,11 @@ func performStreamingRequest(
     session: URLSession,
     onLine: (String) -> Void
 ) async throws {
+    if NutryHostedEgress.isEmbeddedInNutry {
+        throw AICoachError.network(
+            NutryHostedEgress.denyNOOPOutbound(feature: "AI Coach stream").localizedDescription)
+    }
+
     let bytes: (URLSession.AsyncBytes, URLResponse)
     do {
         bytes = try await session.bytes(for: req)

@@ -57,6 +57,8 @@ enum CoachBriefScheduler {
     /// would have disabled the Coach for every install that had never opened the toggle, which is exactly
     /// the population whose behaviour must not change.
     static var coachMasterEnabled: Bool {
+        // Nutry: never allow the NOOP AI Coach (or its morning brief) to phone home.
+        if NutryHostedEgress.isEmbeddedInNutry { return false }
         guard UserDefaults.standard.object(forKey: "noop.coachEnabled") != nil else { return true }
         return UserDefaults.standard.bool(forKey: "noop.coachEnabled")
     }

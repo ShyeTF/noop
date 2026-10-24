@@ -263,4 +263,49 @@ final class MigrationTests: XCTestCase {
             XCTAssertEqual(try Double.fetchOne(db, sql: "SELECT efficiency FROM dailyMetric WHERE day = '2026-01-02'"), 0.9)
         }
     }
+
+    /// v48 adds a nullable layout byte and must not rewrite rows banked before it. Opening the v47 file
+    /// through `WhoopStore(path:)` is the real launch path. A later insert records 18; a re-insert of an
+    /// existing timestamp keeps the old raw (`ON CONFLICT DO NOTHING`).
+    func testV48KeepsSkinAndHeartRowsAndDoesNotRewriteRaw() async throws {
+        let path = NSTemporaryDirectory() + "whoopstore-v48-\(UUID().uuidString).sqlite"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        var dbQueue: DatabaseQueue? = try DatabaseQueue(path: path)
+        try WhoopStore.makeMigrator().migrate(dbQueue!, upTo: "v47-rr-whoop5-fill")
+        try await dbQueue!.write { db in
+            try db.execute(sql: "INSERT INTO hrSample (deviceId, ts, bpm) VALUES ('dev1', 100, 62)")
+            try db.execute(sql: "INSERT INTO hrSample (deviceId, ts, bpm) VALUES ('dev1', 101, 70)")
+            try db.execute(sql: "INSERT INTO skinTempSample (deviceId, ts, raw) VALUES ('dev1', 100, 826)")
+            try db.execute(sql: "INSERT INTO skinTempSample (deviceId, ts, raw, aux1Raw, aux2Raw) VALUES ('dev1', 101, 900, 10, 11)")
+        }
+        dbQueue = nil
+
+        let store = try await WhoopStore(path: path)
+        let heart = try await store.hrSamples(deviceId: "dev1", from: 0, to: 1_000, limit: 10)
+        XCTAssertEqual(heart.map(\.bpm), [62, 70])
+        let skin = try await store.skinTempSamples(deviceId: "dev1", from: 0, to: 1_000, limit: 10)
+        XCTAssertEqual(skin.map(\.ts), [100, 101])
+        XCTAssertEqual(skin.map(\.raw), [826, 900])
+        XCTAssertTrue(skin.allSatisfy { $0.layoutVersion == nil })
+        XCTAssertEqual(skin[1].aux1Raw, 10)
+        XCTAssertEqual(skin[1].aux2Raw, 11)
+
+        let added = try await store.insert(
+            Streams(skinTemp: [SkinTempSample(ts: 200, raw: 3057, layoutVersion: 18)]),
+            deviceId: "dev1")
+        XCTAssertEqual(added.skinTemp, 1)
+        let freshRows = try await store.skinTempSamples(deviceId: "dev1", from: 200, to: 200, limit: 10)
+        let fresh = try XCTUnwrap(freshRows.first)
+        XCTAssertEqual(fresh.raw, 3057)
+        XCTAssertEqual(fresh.layoutVersion, 18)
+
+        let again = try await store.insert(
+            Streams(skinTemp: [SkinTempSample(ts: 100, raw: 9999, layoutVersion: 18)]),
+            deviceId: "dev1")
+        XCTAssertEqual(again.skinTemp, 0)
+        let keptRows = try await store.skinTempSamples(deviceId: "dev1", from: 100, to: 100, limit: 10)
+        let kept = try XCTUnwrap(keptRows.first)
+        XCTAssertEqual(kept.raw, 826)
+        XCTAssertNil(kept.layoutVersion)
+    }
 }

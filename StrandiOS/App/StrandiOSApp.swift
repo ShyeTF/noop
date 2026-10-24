@@ -210,7 +210,7 @@ struct StrandiOSApp: App {
     @ViewBuilder
     private var healthImportAlertMessage: some View {
         if let pending = model.pendingShortcutHealthImport {
-            Text("A Shortcut wants to add \(pending.daysCount) days and \(pending.workoutsCount) workouts to the Apple Health import source.")
+            Text(String(localized: "A Shortcut wants to add \(pending.daysCount) days and \(pending.workoutsCount) workouts to the Apple Health import source."))
         } else {
             Text("A Shortcut wants to add data to the Apple Health import source.")
         }

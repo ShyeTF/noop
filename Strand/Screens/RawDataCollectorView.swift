@@ -59,7 +59,7 @@ struct RawDataCollectorView: View {
             Button("Cancel", role: .cancel) { deleteCandidate = nil }
         } message: {
             if let session = deleteCandidate {
-                Text("The session \(Self.range(session)) and its captured raw data will be deleted permanently.")
+                Text(String(localized: "The session \(Self.range(session)) and its captured raw data will be deleted permanently."))
             }
         }
         .confirmationDialog("Delete all sessions?", isPresented: $confirmDeleteAll,
@@ -67,7 +67,7 @@ struct RawDataCollectorView: View {
             Button("Delete all", role: .destructive) { Task { await deleteAll() } }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("All \(store.sessions.count) recorded sessions and their captured raw data will be deleted permanently.")
+            Text(String(localized: "All \(store.sessions.count) recorded sessions and their captured raw data will be deleted permanently."))
         }
         .alert("Couldn't export session", isPresented: Binding(
             get: { exportError != nil }, set: { if !$0 { exportError = nil } }
@@ -94,7 +94,7 @@ struct RawDataCollectorView: View {
                      : "History sync: idle")
                     .foregroundStyle(StrandPalette.textSecondary)
                 if let active = store.active {
-                    Text("Realtime IMU: session active since \(Self.time(active.startedAtMs))")
+                    Text(String(localized: "Realtime IMU: session active since \(Self.time(active.startedAtMs))"))
                         .foregroundStyle(StrandPalette.accent)
                 }
             }
@@ -217,8 +217,8 @@ struct RawDataCollectorView: View {
                     Section {
                         TimelineView(.periodic(from: .now, by: 1)) { timeline in
                             let current = Self.markerCurrentTime(session: session, now: timeline.date)
-                            Text("Marker: \(binding.wrappedValue.at.formatted(date: .omitted, time: .standard))")
-                            Text("Current time: \(current.formatted(date: .omitted, time: .standard))")
+                            Text(String(localized: "Marker: \(binding.wrappedValue.at.formatted(date: .omitted, time: .standard))"))
+                            Text(String(localized: "Current time: \(current.formatted(date: .omitted, time: .standard))"))
                                 .foregroundStyle(.secondary)
                             HStack {
                                 Button { binding.wrappedValue.at.addTimeInterval(-10) } label: { Text(verbatim: "−10 s") }

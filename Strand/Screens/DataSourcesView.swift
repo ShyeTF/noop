@@ -156,7 +156,7 @@ struct DataSourcesView: View {
                 Text(s).font(StrandFont.subhead)
                     .foregroundStyle(model.whoopImportFailed ? StrandPalette.statusWarning : StrandPalette.statusPositive)
             }
-            Text("\(repo.days.count) days · \(repo.sleeps.count) sleeps stored")
+            Text(String(localized: "\(repo.days.count) days · \(repo.sleeps.count) sleeps stored"))
                 .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
         }
     }
@@ -860,7 +860,7 @@ struct DataSourcesView: View {
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textSecondary)
                 } else if let hr = live.heartRate {
-                    Text("Sharing \(hr) bpm. Waiting for a device to pair.")
+                    Text(String(localized: "Sharing \(hr) bpm. Waiting for a device to pair."))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                 } else {

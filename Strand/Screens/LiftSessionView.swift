@@ -694,7 +694,7 @@ struct LiftSessionView: View {
                     }
                     Button("Keep going", role: .cancel) { }
                 } message: {
-                    Text("\(engine?.completedWorkingSets ?? 0) recorded sets will be thrown away. Nothing is saved and no workout is created.")
+                    Text(String(localized: "\(engine?.completedWorkingSets ?? 0) recorded sets will be thrown away. Nothing is saved and no workout is created."))
                 }
             }
         }
@@ -716,7 +716,7 @@ struct LiftSessionView: View {
         NoopCard {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                 Text("Unfinished sets").strandOverline()
-                Text("Sets not started: \(count)")
+                Text(String(localized: "Sets not started: \(count)"))
                     .font(StrandFont.body)
                     .foregroundStyle(StrandPalette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -759,12 +759,12 @@ struct LiftSessionView: View {
                     .foregroundStyle(StrandPalette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(setCountChanges, id: \.itemId) { change in
-                    Text("\(change.exercise): \(change.from) → \(change.to) sets")
+                    Text(String(localized: "\(change.exercise): \(change.from) → \(change.to) sets"))
                         .font(StrandFont.bodyNumber)
                         .foregroundStyle(StrandPalette.textSecondary)
                 }
                 ForEach(Array(added.enumerated()), id: \.offset) { _, line in
-                    Text("New: \(line.exercise) · sets: \(line.targetSets)")
+                    Text(String(localized: "New: \(line.exercise) · sets: \(line.targetSets)"))
                         .font(StrandFont.bodyNumber)
                         .foregroundStyle(StrandPalette.textSecondary)
                 }

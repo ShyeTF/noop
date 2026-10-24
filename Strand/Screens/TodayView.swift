@@ -1312,7 +1312,7 @@ struct TodayView: View {
             }
             .buttonStyle(.plain)
             .layoutPriority(1)
-            .accessibilityLabel("\(dayNavLabel). Swipe or tap to change day")
+            .accessibilityLabel(String(localized: "\(dayNavLabel). Swipe or tap to change day"))
             .popover(isPresented: $showDayPicker) {
                 // Cap at the LOGICAL day (not raw Date()) so the calendar never offers a day ahead of the
                 // data in the 00:00-04:00 window, matching the visible date + a11y label (#16).
@@ -1734,10 +1734,11 @@ struct TodayView: View {
                                 .accessibilityHidden(true)
                             Text(headline).font(StrandFont.headline)
                                 .foregroundStyle(StrandPalette.textPrimary)
-                                .accessibilityLabel("Readiness: \(levelWord(r.level)). \(headline)")
+                                .accessibilityLabel(String(localized: "Readiness: \(levelWord(r.level)). \(headline)"))
                             Spacer()
                             if let acwr = r.acwr {
-                                Text("load \(String(format: "%.2f", locale: AppLanguage.activeLocale, acwr))")
+                                let loadNumber = String(format: "%.2f", locale: AppLanguage.activeLocale, acwr)
+                                Text(String(localized: "load \(loadNumber)"))
                                     .font(StrandFont.captionNumber)
                                     .foregroundStyle(StrandPalette.textTertiary)
                                     .help("Acute (7-day) vs chronic (28-day) training load. 0.8–1.3 is the sweet spot.")
@@ -2175,7 +2176,7 @@ struct TodayView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Charge baseline calibrating. \(countdown), \(unlock). \(progress).")
+        .accessibilityLabel(String(localized: "Charge baseline calibrating. \(countdown), \(unlock). \(progress)."))
     }
 
     // MARK: A1/S4 Charge breakdown sheet (the Charge-ring tap target)
@@ -2391,7 +2392,7 @@ struct TodayView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Synthesis. \(status)")
+            .accessibilityLabel(String(localized: "Synthesis. \(status)"))
             .accessibilityHint("Collapse")
         } else {
             // Collapsed: a one-liner with the category overline, the status headline and a down-chevron.
@@ -2418,7 +2419,7 @@ struct TodayView: View {
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Synthesis. \(status)")
+            .accessibilityLabel(String(localized: "Synthesis. \(status)"))
             .accessibilityHint("Expand for the full read")
         }
     }
@@ -2442,7 +2443,7 @@ struct TodayView: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Readiness: \(word)")
+        .accessibilityLabel(String(localized: "Readiness: \(word)"))
         .accessibilityHint("See your full readiness")
     }
 
@@ -3027,7 +3028,7 @@ struct TodayView: View {
                     }
                     .padding(.top, 10)
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("These vitals are from \(carriedCaption(prior))")
+                    .accessibilityLabel(String(localized: "These vitals are from \(carriedCaption(prior))"))
                 }
             }
         }
@@ -3388,7 +3389,7 @@ struct TodayView: View {
                         .accessibilityLabel("Apple Watch. Needs more data to score this yet.")
                 } else if ringHasValue(key), let label = provenanceLabel(key) {
                     SourceBadge("\(label)", tint: provenanceTint(key))
-                        .accessibilityLabel("Source: \(label)")
+                        .accessibilityLabel(String(localized: "Source: \(label)"))
                 }
             }
             // LAST in the column, below the provenance badge rather than above it. The badges sit at the
@@ -3570,7 +3571,7 @@ struct TodayView: View {
                 // (`Baselines.update` only advances `nValid` for a non-nil in-range value), so a week of
                 // wear with three R-R-less nights genuinely sits at 2. Naming the unit is the whole fix:
                 // the number is right, the reader's unit was not.
-                Text("\(n) of \(Baselines.minNightsSeed) nights").font(StrandFont.footnote)
+                Text(String(localized: "\(n) of \(Baselines.minNightsSeed) nights")).font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .lineLimit(1).minimumScaleFactor(0.7)
             } else {
@@ -4367,7 +4368,7 @@ struct TodayView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("How \(section.displayName) is calculated")
+        .accessibilityLabel(String(localized: "How \(section.displayName) is calculated"))
         .help("How this score is calculated")
     }
 
@@ -5681,7 +5682,7 @@ private struct StrapSyncRow: View {
                             .multilineTextAlignment(.trailing)
                             .fixedSize(horizontal: false, vertical: true)
                     } else if let at = live.lastSyncedAt {
-                        Text("History synced \(relativeAgo(at, now: context.date.timeIntervalSince1970))")
+                        Text(String(localized: "History synced \(relativeAgo(at, now: context.date.timeIntervalSince1970))"))
                             .font(StrandFont.captionNumber)
                             .foregroundStyle(StrandPalette.textSecondary)
                     } else {
@@ -5749,7 +5750,7 @@ private struct StrapBatteryRow: View {
                     Image(systemName: symbol(pct))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(tint(pct))
-                    Text("\(Int(pct.rounded()))%")
+                    Text(String(localized: "\(Int(pct.rounded()))%"))
                         .font(StrandFont.captionNumber)
                         .foregroundStyle(StrandPalette.textSecondary)
                     // The runtime estimate sits beside the %, dimmer, only when we have a trusted one.
@@ -5763,7 +5764,7 @@ private struct StrapBatteryRow: View {
                     }
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Strap battery \(Int(pct.rounded())) percent\(live.charging == true ? ", charging" : "")\(estimateText.map { ", \($0)" } ?? "")")
+                .accessibilityLabel(String(localized: "Strap battery \(Int(pct.rounded())) percent\(live.charging == true ? ", charging" : "")\(estimateText.map { ", \($0)" } ?? "")"))
             }
         }
     }

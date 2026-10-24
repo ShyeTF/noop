@@ -294,7 +294,7 @@ struct FullDayChartView: View {
             Image(systemName: "waveform.slash")
                 .font(.system(size: 26, weight: .light))
                 .foregroundStyle(StrandPalette.textTertiary)
-            Text("No \(metric.title.lowercased()) here")
+            Text(String(localized: "No \(metric.title.lowercased()) here"))
                 .font(StrandFont.body)
                 .foregroundStyle(StrandPalette.textSecondary)
             Text(emptyReason)

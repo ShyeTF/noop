@@ -948,7 +948,7 @@ private struct FitnessAgeSection: View {
             .buttonStyle(LiquidPressStyle())
             .accessibilityElement(children: .ignore)
             // The spoken label carries the bound too, so a screen reader is not told a floored reading is exact.
-            .accessibilityLabel("Fitness Age \(bound)\(shown), \(ageDeltaLine(years: years, younger: younger, bound: bound)). Tap to see the trend.")
+            .accessibilityLabel(String(localized: "Fitness Age \(bound)\(shown), \(ageDeltaLine(years: years, younger: younger, bound: bound)). Tap to see the trend."))
 
             // At a bound the age has stopped carrying information: every model output past the end of
             // the scale banks as the same number, so someone still improving sees nothing move (#2184).
@@ -966,7 +966,7 @@ private struct FitnessAgeSection: View {
                     .foregroundStyle(StrandPalette.textTertiary)
             }
 
-            Text("± \(Int(FitnessAgeEngine.displayBandYears)) yr · a fitness comparison, not a biological age")
+            Text(String(localized: "± \(Int(FitnessAgeEngine.displayBandYears)) yr · a fitness comparison, not a biological age"))
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
 
@@ -1096,7 +1096,7 @@ private struct ReadinessChecklistCard: View {
                 }
                 group(title: "Drives your Fitness Age", items: drivesAge)
                 group(title: "Sharpens your VO₂max", items: unlocksVO2)
-                Text("Built from published methods (Nes/HUNT) on \(Platform.deviceNounPhrase). It's a fitness comparison against an average peer your age, not a biological or medical age.")
+                Text(String(localized: "Built from published methods (Nes/HUNT) on \(Platform.deviceNounPhrase). It's a fitness comparison against an average peer your age, not a biological or medical age."))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1154,7 +1154,7 @@ private struct ReadinessChecklistCard: View {
                         .foregroundStyle(StrandPalette.accent)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(item.label): \(item.detail). Fix in Settings.")
+                .accessibilityLabel(String(localized: "\(item.label): \(item.detail). Fix in Settings."))
             }
         }
         // When a Fix button is present keep it as its own VoiceOver stop (.contain); otherwise fold the
@@ -1267,7 +1267,7 @@ private struct VitalitySection: View {
                         .allowsHitTesting(false)
                     }
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Vitality \(Int(v.rounded())) out of 100")
+                    .accessibilityLabel(String(localized: "Vitality \(Int(v.rounded())) out of 100"))
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: NoopMetrics.space1) {
@@ -1284,11 +1284,11 @@ private struct VitalitySection: View {
             if (best?.lnHazard ?? 0) < 0 || (worst?.lnHazard ?? 0) > 0 {
                 Divider().overlay(StrandPalette.hairline)
                 if let best, best.lnHazard < 0 {
-                    Text("Helping most: \(best.label)")
+                    Text(String(localized: "Helping most: \(best.label)"))
                         .font(StrandFont.footnote).foregroundStyle(StrandPalette.statusPositive)
                 }
                 if let worst, worst.lnHazard > 0 {
-                    Text("Holding you back: \(worst.label)")
+                    Text(String(localized: "Holding you back: \(worst.label)"))
                         .font(StrandFont.footnote).foregroundStyle(StrandPalette.statusWarning)
                 }
             }

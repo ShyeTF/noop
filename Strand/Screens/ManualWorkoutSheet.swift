@@ -313,7 +313,7 @@ struct ManualWorkoutSheet: View {
             .padding(.horizontal, 12).padding(.vertical, 8)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Pick \(name)")
+        .accessibilityLabel(String(localized: "Pick \(name)"))
     }
 
     // MARK: - Sections

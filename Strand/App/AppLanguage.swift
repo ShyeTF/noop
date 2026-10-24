@@ -56,6 +56,12 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     /// This deliberately follows `Bundle`, not the pending picker value, so changing the setting cannot
     /// produce a half-new/half-old UI before the requested reopen.
     static var activeLocale: Locale {
+        // Nutry: the hosted app is French. Decimal comma, 24-hour clock and French dates
+        // stay on fr_FR even when the iPhone region would keep another separator or clock.
+        // The flag is set by NutryNoopLocalization.install(); upstream NOOP leaves it unset.
+        if UserDefaults.standard.bool(forKey: "nutry.noop.frenchFormats") {
+            return Locale(identifier: "fr_FR")
+        }
         let bundleLanguage = Bundle.main.preferredLocalizations.first ?? "en"
         let language = bundleLanguage.split(separator: "-").first.map(String.init) ?? bundleLanguage
         // Preserve the device's regional conventions (24-hour clock, date order, decimal separator) while
