@@ -1234,6 +1234,24 @@ object NoopPrefs {
         of(context).edit().putString(KEY_ILLNESS_LAST_NOTIFIED_DAY, day).apply()
     }
 
+    /** Whether the illness banner was RAISED at the last evaluation, persisted so the clear-to-raised
+     *  edge survives process death. It used to live only in memory (a service field and a StateFlow
+     *  that starts null), so every cold start re-armed the edge and the once-a-day gate then allowed a
+     *  fresh notification about an alert that had not transitioned at all (#2586). */
+    const val KEY_ILLNESS_WAS_RAISED = "noop.illnessWasRaised"
+
+    /** Null means no evaluable history has established a previous state yet. Treating it as clear
+     *  would invent a transition on upgrade when an existing two-night warning is already raised. */
+    fun illnessWasRaised(context: Context): Boolean? {
+        val prefs = of(context)
+        return if (prefs.contains(KEY_ILLNESS_WAS_RAISED))
+            prefs.getBoolean(KEY_ILLNESS_WAS_RAISED, false) else null
+    }
+
+    fun setIllnessWasRaised(context: Context, raised: Boolean) {
+        of(context).edit().putBoolean(KEY_ILLNESS_WAS_RAISED, raised).apply()
+    }
+
     /** Battery alerts, low (≤15%) + charge-complete (100%) strap notifications (#368, thanks @ujix).
      *  Default ON; gated here and behind the OS notification permission. */
     const val KEY_BATTERY_ALERTS = "noop.batteryAlerts"
@@ -1422,6 +1440,16 @@ object NoopPrefs {
 
     fun setEffortRescoreDone(context: Context) {
         of(context).edit().putBoolean(KEY_EFFORT_RESCORE_DONE, true).apply()
+    }
+
+    /** Full-history sleep wear repair is marked only after the source rescore returns successfully. */
+    const val KEY_SLEEP_WEAR_RESCORE_DONE = "intelligence.sleepWearRescore.v1.done"
+
+    fun sleepWearRescoreDone(context: Context): Boolean =
+        of(context).getBoolean(KEY_SLEEP_WEAR_RESCORE_DONE, false)
+
+    fun setSleepWearRescoreDone(context: Context) {
+        of(context).edit().putBoolean(KEY_SLEEP_WEAR_RESCORE_DONE, true).apply()
     }
 
     /** Whether the one-shot #547 implausible-timestamp heal has run. Set true once it completes so the

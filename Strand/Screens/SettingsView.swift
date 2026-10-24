@@ -1677,7 +1677,7 @@ struct SettingsView: View {
     // MARK: - Features (opt-in trackers)
 
     /// Opt-in, manual-first feature toggles (default OFF). Hydration tracking gates the water-log card on
-    /// the Today dashboard and its detail screen — nothing is shown or stored until it's enabled.
+    /// the Today dashboard and its detail screen, plus Apple Health water imports on iOS.
     private var featuresCard: some View {
         SettingsSection(
             icon: "drop.fill",
@@ -1699,6 +1699,13 @@ struct SettingsView: View {
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
+                #if os(iOS)
+                Text("Also imports water from Apple Health when connected and allowed to read water data. Drinks logged in NOOP are not written to Apple Health.")
+                    .font(StrandFont.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                #endif
+
                 rowDivider
 
                 Toggle(isOn: $autoDetectWorkoutsEnabled) {
@@ -1711,6 +1718,11 @@ struct SettingsView: View {
                 .accessibilityHint("Offers to save a workout when it spots sustained elevated heart rate")
 
                 Text(String(localized: "After a sync, NOOP looks over your recent heart rate for a sustained, raised stretch that looks like exercise and offers to save it. It only ever suggests. Nothing is saved until you tap Save, and you can dismiss any suggestion. Turning this off stops future suggestions but keeps your existing workout history. Deliberately conservative, so the odd workout may be missed. On \(Platform.deviceNounPhrase) only."))
+                    .font(StrandFont.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Skips sessions that overlap a saved or imported workout, including workouts from Apple Health.")
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

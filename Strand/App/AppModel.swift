@@ -499,8 +499,8 @@ final class AppModel: ObservableObject {
             // flag → no-op on every subsequent launch; idempotent on a clean DB.
             await self.intelligence.runTimestampHealIfNeeded()
             // One-shot on-upgrade Effort rescore (#313): recompute strain from source across the FULL
-            // history once, so any deep-history rows an older build left on the 0–21 axis regenerate on
-            // the 0–100 axis. Guarded by a persisted flag, so this is a no-op on every subsequent launch.
+            // history and repair sleep rejected by unmatched WRIST_OFF in one pass. Both persisted flags
+            // describe that shared pass; either pending flag triggers it.
             await self.intelligence.runEffortRescoreIfNeeded()
             while !Task.isCancelled {
                 if WhoopEnergyRuntime.skipsHeavyMaintenance(
@@ -736,6 +736,7 @@ final class AppModel: ObservableObject {
     private var deferredRescoreInFlight = false
 
     func runDeferredRescoreIfOwed() async {
+        await intelligence.runSleepWearRescoreIfNeeded()
         // A pass already running here holds the owed mark itself and settles it when it finishes; forcing
         // another would only queue a second full pass behind it.
         guard RescoreBackgroundScheduler.isRescoreOwed, !intelligence.computing else { return }
@@ -2011,7 +2012,8 @@ final class AppModel: ObservableObject {
     }
 
     private func evaluateIllness(_ days: [DailyMetric]) {
-        guard behavior.illnessWatch, days.count >= 14 else {
+        guard behavior.illnessWatch, days.count >= 14,
+              let latestDay = days.last?.day, latestDay == repo.today?.day else {
             healthAlert = nil; illnessSignal = nil; illnessDistance = nil; return
         }
         Task { [weak self] in
@@ -2047,8 +2049,12 @@ final class AppModel: ObservableObject {
     /// publish the result + the semantic `healthAlert` banner payload.
     private func applyIllnessSignal(_ days: [DailyMetric], alcohol: Bool,
                                     hardOrLateWorkout: Bool, alreadyUnwell: Bool) {
+        // A newer day can arrive while the journal read is in flight. Never publish the older
+        // task's alert over that day's result.
+        guard days.last?.day == repo.days.last?.day, days.last?.day == repo.today?.day else { return }
         let previous = healthAlert
         let recent = Array(days.suffix(2))
+        let latest = days[days.count - 1]
         let base = Array(days.suffix(31).dropLast(3))    // ~28 days ending 3 days ago
         func mean(_ vals: [Double]) -> Double? { vals.isEmpty ? nil : vals.reduce(0, +) / Double(vals.count) }
         func rm(_ kp: (DailyMetric) -> Double?) -> Double? { mean(recent.compactMap(kp)) }
@@ -2058,11 +2064,15 @@ final class AppModel: ObservableObject {
         // engine's gate for actually raising. Skin-temp is already a stored DEVIATION (°C), so it's
         // z-scored against a zero-centred personal spread; the others z-score the raw column.
         func signal(_ kp: (DailyMetric) -> Double?, cfgKey: String, illnessUp: Bool) -> (IllnessSignalEngine.SignalReading, Bool)? {
-            guard let cfg = Baselines.metricCfg[cfgKey], let recentMean = rm(kp) else { return nil }
+            guard let cfg = Baselines.metricCfg[cfgKey], let recentMean = rm(kp),
+                  let latestValue = kp(latest) else { return nil }
             let state = Baselines.foldHistory(base.map(kp), cfg: cfg)
             guard state.usable else { return (IllnessSignalEngine.SignalReading(zIllnessward: 0, present: false), false) }
             let dev = Baselines.deviation(recentMean, state: state)
-            let z = illnessUp ? dev.z : -dev.z   // HRV drop is illness-ward → negate
+            let latestDev = Baselines.deviation(latestValue, state: state)
+            // Keep the two-night smoothing, but only count a signal while the newest night
+            // independently clears the same illness-ward threshold (#2533).
+            let z = illnessUp ? min(dev.z, latestDev.z) : min(-dev.z, -latestDev.z)
             return (IllnessSignalEngine.SignalReading(zIllnessward: z), state.trusted)
         }
 
@@ -2072,8 +2082,8 @@ final class AppModel: ObservableObject {
         // Skin-temp deviation: a stored °C delta. Build a small zero-centred state from its own recent
         // spread so a +0.6 °C reads as a meaningful z without needing a separate baseline column.
         var skin: (IllnessSignalEngine.SignalReading, Bool)? = nil
-        if let recentSkin = rm({ $0.skinTempDevC }) {
-            let z = recentSkin / 0.3     // ~0.3 °C ≈ one personal spread (matches skin_temp floorSpread)
+        if let recentSkin = rm({ $0.skinTempDevC }), let latestSkin = latest.skinTempDevC {
+            let z = min(recentSkin, latestSkin) / 0.3 // ~0.3 °C ≈ one personal spread
             skin = (IllnessSignalEngine.SignalReading(zIllnessward: z), true)
         }
 
@@ -2104,15 +2114,15 @@ final class AppModel: ObservableObject {
 
         // Caller-rendered phrases for the signals that fire (the engine surfaces only the firing ones).
         var labels: [String: String] = [:]
-        if let r = rm({ $0.restingHr.map(Double.init) }), let b = mean(base.compactMap { $0.restingHr.map(Double.init) }), r > b {
+        if let r = latest.restingHr.map(Double.init), let b = mean(base.compactMap { $0.restingHr.map(Double.init) }), r > b {
             let delta = Int((r - b).rounded())
             labels["restingHR"] = String(localized: "RHR +\(delta)")
         }
-        if let r = rm({ $0.avgHrv }), let b = mean(base.compactMap { $0.avgHrv }), b > 0, r < b {
+        if let r = latest.avgHrv, let b = mean(base.compactMap { $0.avgHrv }), b > 0, r < b {
             let percent = Int(((1 - r / b) * 100).rounded())
             labels["hrv"] = String(localized: "HRV −\(percent)%")
         }
-        if let r = rm({ $0.skinTempDevC }), r > 0 {
+        if let r = latest.skinTempDevC, r > 0 {
             // The value is STORED in °C but must be SHOWN in the reader's unit: this label welded "°C"
             // into the translated string, so a Fahrenheit user got "+0.7 °C" from the banner while every
             // other surface rendered the same night as "+1.3 Δ°F".
@@ -2129,7 +2139,7 @@ final class AppModel: ObservableObject {
                 locale: AppLanguage.activeLocale)
             labels["skinTemp"] = String(localized: "Skin temperature \(temperature)")
         }
-        if let r = rm({ $0.respRateBpm }), let b = mean(base.compactMap { $0.respRateBpm }), r > b {
+        if let r = latest.respRateBpm, let b = mean(base.compactMap { $0.respRateBpm }), r > b {
             labels["respiration"] = String(localized: "Respiration up")
         }
 

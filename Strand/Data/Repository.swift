@@ -102,8 +102,6 @@ struct RepositoryFreshness: Equatable, Sendable {
     var latestDay: String?
 
     static let empty = RepositoryFreshness()
-
-    var hasAnyHistory: Bool { importedDays > 0 || computedDays > 0 || appleDays > 0 }
 }
 
 /// What `deleteSleepSession` hands back so a transient UNDO can restore the night (#65). Carries the
@@ -184,6 +182,12 @@ final class Repository: ObservableObject {
 
     /// Daily metrics (recovery/strain/sleep/HRV/RHR…) over the recent window, oldest→newest.
     @Published var days: [DailyMetric] = []
+    /// The Charge baselines (HRV, resting HR, respiration) resolved from the imported and own daily rows
+    /// with the engine's own rule (#2525), recomputed on every `refresh()`. The single funnel every Charge
+    /// readout below the headline reads (the "What shaped it" rows, the calibration count, the confidence
+    /// tier), so none of them can fold a different history than the score was computed against. nil until
+    /// the first refresh.
+    @Published private(set) var chargeBaselines: ChargeBaselines.Resolved?
     /// Cached sleep sessions over the recent window, oldest→newest.
     @Published var sleeps: [CachedSleepSession] = []
     /// Imported (export-verbatim) sleep figures by day. Empty until a WHOOP import lands.
@@ -468,8 +472,8 @@ final class Repository: ObservableObject {
     }
 
     /// Sleep sessions across every registered WHOOP source for a ts range, keeping ALL sessions per day (a nap + a main
-    /// night both survive) and dropping only EXACT-duplicate blocks (same start+end) recorded under both
-    /// union ids. The downstream `mergeSleep`/`userEditedDays` do the per-day collapse, exactly as before.
+    /// night both survive) and collapsing near-identical nights recorded under different union ids.
+    /// The downstream `mergeSleep`/`userEditedDays` do the per-day collapse, exactly as before.
     private func unionSleepSessions(store: WhoopStore, from: Int, to: Int, limit: Int = 4000) async -> [CachedSleepSession] {
         Self.dedupBlocks(await unionRawSleepBlocks(store: store, ids: rawPhysiologyReadIds(store: store), from: from, to: to, limit: limit))
     }
@@ -486,8 +490,8 @@ final class Repository: ObservableObject {
         return byDay.values.sorted { $0.day < $1.day }
     }
 
-    /// Computed ("-noop") sleep sessions across every registered WHOOP source, keeping ALL sessions per day and dropping
-    /// only EXACT-duplicate blocks recorded under both computed siblings.
+    /// Computed ("-noop") sleep sessions across every registered WHOOP source, keeping ALL sessions per day
+    /// and collapsing near-identical nights recorded under different computed siblings.
     private func unionComputedSleepSessions(store: WhoopStore, from: Int, to: Int, limit: Int = 4000) async -> [CachedSleepSession] {
         Self.dedupBlocks(await unionRawSleepBlocks(store: store, ids: rawComputedReadIds(store: store), from: from, to: to, limit: limit))
     }
@@ -502,14 +506,27 @@ final class Repository: ObservableObject {
         return blocks
     }
 
-    /// Drop blocks that share a (startTs, endTs) key, the same physical session recorded under both union
-    /// ids, keeping the first (active strap). Preserves genuinely distinct blocks (naps + main night).
-    nonisolated private static func dedupBlocks(_ blocks: [CachedSleepSession]) -> [CachedSleepSession] {
-        var seen = Set<String>()
+    /// Keep the active source's copy of a night when another source recorded nearly the same interval.
+    /// Require a majority of BOTH intervals to overlap so a short nap inside a long night survives.
+    /// Separate blocks from one source remain distinct, including split sleeps.
+    nonisolated static func dedupBlocks(_ blocks: [CachedSleepSession]) -> [CachedSleepSession] {
+        var seen = Set<[Int]>()
         var out: [CachedSleepSession] = []
         for b in blocks {
-            let key = "\(b.startTs)-\(b.endTs)"
-            if seen.insert(key).inserted { out.append(b) }
+            let key = [b.startTs, b.endTs]
+            guard seen.insert(key).inserted else { continue }
+            let overlapsOtherSource = out.contains { kept in
+                guard let source = b.deviceId, let keptSource = kept.deviceId,
+                      source != keptSource else { return false }
+                let start = max(b.effectiveStartTs, kept.effectiveStartTs)
+                let end = min(b.endTs, kept.endTs)
+                let bDuration = b.endTs - b.effectiveStartTs
+                let keptDuration = kept.endTs - kept.effectiveStartTs
+                let overlap = end - start
+                return bDuration > 0 && keptDuration > 0 &&
+                    overlap > bDuration / 2 && overlap > keptDuration / 2
+            }
+            if !overlapsOtherSource { out.append(b) }
         }
         return out
     }
@@ -835,6 +852,7 @@ final class Repository: ObservableObject {
     private struct MergedCaches {
         let importedSleep: [String: ImportedSleepFigures]
         let days: [DailyMetric]
+        let chargeBaselines: ChargeBaselines.Resolved
         let sleeps: [CachedSleepSession]
         let vitalRows: [SourcedDailyMetric]
         let freshness: RepositoryFreshness
@@ -943,6 +961,13 @@ final class Repository: ObservableObject {
         let impSleep = await unionSleepSessions(store: store, from: lo, to: hi)
         let compSleep = await unionComputedSleepSessions(store: store, from: lo, to: hi)
 
+        // #2525: the Charge baselines' inputs, read on the main actor before detaching: today's local day
+        // (the same local-calendar key the engine anchors its fold on) and the two recalibration epochs the
+        // engine reads from the same UserDefaults keys.
+        let chargeAnchorDay = AnalyticsEngine.dayString(nowTs, offsetSec: TimeZone.current.secondsFromGMT(for: now))
+        let hrvEpoch = Baselines.hrvBaselineEpoch()
+        let recoveryEpoch = Baselines.recoveryBaselineEpoch()
+
         // Export-verbatim sleep figures (long-format metricSeries rows from WhoopImporter).
         // SleepView prefers these per day over its APPROXIMATE recomputations.
         let perf = await unionMetricSeries(store: store, key: "sleep_performance", from: fromDay, to: toDay)
@@ -970,6 +995,11 @@ final class Repository: ObservableObject {
                     into: Self.mergeDaily(imported: imported, computed: computed, userEditedDays: editedDays),
                     activityFile
                 ),
+                // From the two buckets BEFORE `mergeDaily` blends them: the rule needs to know which nights
+                // are imported and which are the wearer's own.
+                chargeBaselines: ChargeBaselines.resolve(imported: imported, own: computed,
+                                                         anchorDay: chargeAnchorDay,
+                                                         hrvEpoch: hrvEpoch, recoveryEpoch: recoveryEpoch),
                 sleeps: Self.mergeSleep(imported: impSleep, computed: compSleep),
                 vitalRows: Self.sourceRows(imported: imported, computed: computed, apple: apple),
                 freshness: Self.computeFreshness(imported: imported, computed: computed, apple: apple,
@@ -986,6 +1016,7 @@ final class Repository: ObservableObject {
         // is what stops the analyze-tail's burst of refresh() calls each re-firing TodayView.loadAll().
         let unchanged = loaded
             && merged.days == days
+            && merged.chargeBaselines == chargeBaselines
             && merged.sleeps == sleeps
             && merged.importedSleep == importedSleep
             && merged.vitalRows == vitalRows
@@ -996,6 +1027,7 @@ final class Repository: ObservableObject {
         // the intraday-updating views reload exactly once for this real change.
         self.importedSleep = merged.importedSleep
         self.days = merged.days
+        self.chargeBaselines = merged.chargeBaselines
         self.sleeps = merged.sleeps
         self.vitalRows = merged.vitalRows
         self.freshness = merged.freshness
@@ -1379,8 +1411,8 @@ final class Repository: ObservableObject {
         let rawIds = rawPhysiologyReadIds(store: store)
         let rawComputedIds = rawComputedReadIds(store: store)
         // UNION the active strap + canonical (imported) and their computed siblings, keeping ALL blocks (not
-        // one per day, this view expands split sleeps), but dropping any block that appears under BOTH union
-        // ids (same start+end key) so a day present in both namespaces isn't double-listed.
+        // one per day, this view expands split sleeps), but collapsing a night recorded under BOTH union
+        // ids even when the recorded bounds differ slightly.
         let imported = Self.dedupBlocks(await unionRawSleepBlocks(store: store, ids: rawIds, from: lo, to: hi))
         let computed = Self.dedupBlocks(await unionRawSleepBlocks(store: store, ids: rawComputedIds, from: lo, to: hi))
         let cal = Calendar.current

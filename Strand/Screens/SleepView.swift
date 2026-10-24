@@ -50,6 +50,11 @@ struct SleepView: View {
     /// The repo signature the cached `model` was built from. Cheap to compute every render;
     /// when it differs from the current inputs we rebuild the model.
     @State private var modelKey: SleepInputKey?
+    @State private var loadedSleepRefresh: Int?
+    @State private var resultTracker = SleepResultChangeTracker()
+    @State private var resultNoticeVisible = false
+    @State private var resultNoticeRevision = 0
+    @State private var resultNoticeScope: String?
 
     /// Which night the hero hypnogram shows: 0 = last night, N = N sleep-sessions back.
     /// Snaps back to 0 whenever the data key changes — a stale offset would silently point
@@ -165,6 +170,11 @@ struct SleepView: View {
                     VStack(alignment: .leading, spacing: NoopMetrics.sectionSpacing) {
                         if let sleepUndo { sleepUndoBanner(sleepUndo) }
                         SleepFreshnessNote(latestWakeTs: resolved.night.session.endTs)
+                        if resultNoticeVisible {
+                            DataPendingNote(title: "Sleep result updated",
+                                            message: "This night's sleep times or total asleep changed by at least five minutes.",
+                                            symbol: "checkmark.circle")
+                        }
                         // Bleed past ScreenScaffold's 16/24 gutters so the hero column is edge-to-edge
                         // in the upper band; the night scene itself is the fixed topBackground.
                         // Customize sits at the end of the hero (not floating in a blank band).
@@ -201,6 +211,8 @@ struct SleepView: View {
             // `decodedNight` JSON-decodes and body re-evaluates at 1Hz while HR streams. (#160)
             .onChangeCompat(of: nightOffset) { newOffset in
                 navNight = newOffset == 0 ? nil : decodedNight(at: newOffset)
+                resetResultNotice()
+                observeResultChange()
             }
             .onAppear {
                 if modelKey != key {
@@ -210,24 +222,39 @@ struct SleepView: View {
                     navNight = nil
                 }
             }
+            .onChangeCompat(of: intelligence.computing) { _ in observeResultChange() }
+            .onDisappear { resetResultNotice() }
+            .task(id: resultNoticeRevision) {
+                guard resultNoticeVisible else { return }
+                do { try await Task.sleep(nanoseconds: 8_000_000_000) }
+                catch { return }
+                resultNoticeVisible = false
+            }
             // Load EVERY sleep block across BOTH sources (un-deduplicated) so the hero's ◀/▶ can
             // browse split-sleep days the dashboard collapses — including Bluetooth-only nights,
             // whose blocks live under the computed source. Re-runs whenever a sync/import bumps
             // refreshSeq; snaps back to the newest day and rebuilds the model so offset 0 reflects
             // the freshly-loaded blocks. (#170)
             .task(id: repo.refreshSeq) {
-                allSessions = await repo.allSleepSessions()
+                let refresh = repo.refreshSeq
+                let sessions = await repo.allSleepSessions()
                 // Load the learned habitual midsleep the engine used, so the main-night pick aligns to it
                 // (a shift/late sleeper) instead of only the cold-start band. nil under threshold. (#547)
-                habitualMidsleepSec = await repo.habitualMidsleepSec()
+                let habitual = await repo.habitualMidsleepSec()
                 // Per-epoch motion for every block (#407), keyed by detected start. mergeDay reads only the
                 // already-resolved group's entries — this just pre-fetches them all so the model build is sync.
-                motionByStart = await repo.sessionMotions(sessions: allSessions)
+                let motions = await repo.sessionMotions(sessions: sessions)
+                guard !Task.isCancelled, refresh == repo.refreshSeq else { return }
+                allSessions = sessions
+                habitualMidsleepSec = habitual
+                motionByStart = motions
                 nightOffset = 0
                 navNight = nil
                 modelKey = dataKey
                 navDaysCache = SleepModel.navDays(navSessions: navSessions)
                 model = buildModel()
+                loadedSleepRefresh = refresh
+                observeResultChange()
             }
             .sheet(item: $wakeEdit) { edit in
                 // The night's RECORDED coverage for the #940 guards: from the immutable detected
@@ -960,7 +987,11 @@ struct SleepView: View {
         // Label above the trace, plot inset 10pt to line up with the stage-timeline rows' strips
         // (the old 44+12 gutter matched the removed Hypnogram's y-axis column). (ryanAtriumAi #988)
         VStack(alignment: .leading, spacing: 2) {
-            Text("Move")
+            // "Move" alone did not say what the height means. The trace is normalised to THIS night's
+            // peak, so the tallest spike is full height whatever its absolute size and heights do not
+            // compare between nights. The strap calibrates no absolute magnitude, so naming the scale
+            // is the honest axis label rather than a number. Twin of the Kotlin `MotionStrip` label.
+            Text("Move, relative to tonight")
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
             if night.motionEpochs.count >= 2 {
@@ -1806,6 +1837,36 @@ struct SleepView: View {
                                                     typicalTotalMin: model.typicalTotalMin))
     }
 
+    /// Compare only after the screen has loaded the refreshed blocks and scoring has settled.
+    /// The observer lives on the screen, so a hidden notice cannot stop change observation.
+    private func observeResultChange() {
+        guard loadedSleepRefresh == repo.refreshSeq, !intelligence.computing else { return }
+        guard let model else { resetResultNotice(); return }
+        let snapshot = resultSnapshot(heroNight(model))
+        if resultNoticeScope != snapshot.scope { resultNoticeVisible = false }
+        resultNoticeScope = snapshot.scope
+        if resultTracker.observe(snapshot, ready: true) {
+            resultNoticeVisible = true
+            resultNoticeRevision += 1
+        }
+    }
+
+    private func resetResultNotice() {
+        resultTracker = SleepResultChangeTracker()
+        resultNoticeVisible = false
+        resultNoticeScope = nil
+    }
+
+    private func resultSnapshot(_ night: Night) -> SleepResultSnapshot {
+        let day = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: Double(night.session.endTs)))
+        let sources = Set(night.sourceBlocks.compactMap(\.deviceId)).sorted().joined(separator: ",")
+        return SleepResultSnapshot(
+            scope: "\(repo.deviceId):\(sources):\(day.timeIntervalSince1970)",
+            onset: night.session.effectiveStartTs, wake: night.session.endTs,
+            asleepMinutes: night.stages.asleep,
+            edited: night.session.userEdited || night.sourceBlocks.contains { $0.userEdited })
+    }
+
     // MARK: - Memoization plumbing
 
     /// A cheap fingerprint of the repo inputs this screen derives from. Recomputed every
@@ -1920,9 +1981,6 @@ struct SleepView: View {
         return (first.effectiveStartTs, last.endTs)
     }
 
-    /// Soft nap-duration hint retained for callers/tests; the nap CLASSIFICATION is now purely "not the
-    /// chosen main block" (see `isNap`), never an independent duration/onset test. (#518/#547)
-    static let napMaxHours: Double = 3.0
     /// Classify a block as a nap: it's a nap exactly when it is NOT the day's chosen main block. Derived
     /// from the pick (never an independent onset/duration gate), so the label can't contradict the
     /// selection — the contradiction the audit flagged. The main block is never a nap. (#518/#547)

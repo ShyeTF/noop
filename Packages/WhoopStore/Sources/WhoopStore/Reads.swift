@@ -250,6 +250,11 @@ extension WhoopStore {
     /// [hrFingerprint] uses, materialising no rows. `COUNT(*)` is the load-bearing half: it moves when a
     /// backfill lands rows INSIDE a window already covered, which `MAX(ts)` alone would miss.
     ///
+    /// The five R-R figures come from ONE walk (the `rr` derived table). Each needs `srcChannel` or
+    /// `tsSuspect`, which the key index does not hold, so every beat in the window costs a table lookup;
+    /// as five sub-selects they paid it up to five times, and on a 54-hour WHOOP 5 window (~280k beats)
+    /// that was 44% of a warm re-score's CPU. The values are unchanged.
+    ///
     /// The streams are exactly the ones the per-day loop reads and hands to `analyzeDay`:
     /// - `ppgHrSample`: the day's HR read is measured ∪ PPG-derived ([hrSamples]), so a PPG row for a second
     ///   with no measured HR changes the scored series while `hrSample` stays put.
@@ -271,19 +276,9 @@ extension WhoopStore {
                 SELECT
                   (SELECT COUNT(*) FROM ppgHrSample WHERE deviceId = :d AND ts >= :f AND ts <= :t) AS pc,
                   (SELECT COALESCE(MAX(ts), 0) FROM ppgHrSample WHERE deviceId = :d AND ts >= :f AND ts <= :t) AS pm,
-                  (SELECT COUNT(*) FROM rrInterval WHERE deviceId = :d AND ts >= :f AND ts <= :t
-                     AND (srcChannel IS NULL OR srcChannel <> :rrx)
-                     AND (tsSuspect IS NULL OR tsSuspect <> 1)) AS rc,
-                  (SELECT COALESCE(MAX(ts), 0) FROM rrInterval WHERE deviceId = :d AND ts >= :f AND ts <= :t
-                     AND (srcChannel IS NULL OR srcChannel <> :rrx)
-                     AND (tsSuspect IS NULL OR tsSuspect <> 1)) AS rm,
-                  (SELECT COUNT(*) FROM rrInterval WHERE deviceId = :d AND ts >= :f AND ts <= :t
-                     AND srcChannel = 5 AND (tsSuspect IS NULL OR tsSuspect <> 1)) AS w5,
-                  (SELECT COUNT(*) FROM rrInterval WHERE deviceId = :d AND ts >= :f AND ts <= :t
-                     AND srcChannel = 7 AND (tsSuspect IS NULL OR tsSuspect <> 1)) AS w7,
+                  rr.rc AS rc, rr.rm AS rm, rr.w5 AS w5, rr.w7 AS w7,
                   EXISTS(SELECT 1 FROM rrInterval WHERE deviceId = :d AND srcChannel IN (5, 6, 7)) AS w5owner,
-                  (SELECT COUNT(*) FROM rrInterval WHERE deviceId = :d AND ts >= :f AND ts <= :t
-                     AND srcChannel = :whoop4Historical AND (tsSuspect IS NULL OR tsSuspect <> 1)) AS w4h,
+                  rr.w4h AS w4h,
                   COALESCE((SELECT QUOTE(brand) || ':' || QUOTE(model) FROM pairedDevice
                             WHERE id = :d), 'absent') AS registry,
                   (SELECT COUNT(*) FROM respSample WHERE deviceId = :d AND ts >= :f AND ts <= :t) AS xc,
@@ -300,6 +295,14 @@ extension WhoopStore {
                   (SELECT COALESCE(MAX(ts), 0) FROM sleepStateSample WHERE deviceId = :d AND ts >= :f AND ts <= :t) AS bm,
                   (SELECT COUNT(*) FROM event WHERE deviceId = :d AND ts >= :f AND ts <= :t) AS ec,
                   (SELECT COALESCE(MAX(ts), 0) FROM event WHERE deviceId = :d AND ts >= :f AND ts <= :t) AS em
+                FROM (SELECT
+                        COUNT(CASE WHEN srcChannel IS NULL OR srcChannel <> :rrx THEN 1 END) AS rc,
+                        COALESCE(MAX(CASE WHEN srcChannel IS NULL OR srcChannel <> :rrx THEN ts END), 0) AS rm,
+                        COUNT(CASE WHEN srcChannel = 5 THEN 1 END) AS w5,
+                        COUNT(CASE WHEN srcChannel = 7 THEN 1 END) AS w7,
+                        COUNT(CASE WHEN srcChannel = :whoop4Historical THEN 1 END) AS w4h
+                      FROM rrInterval WHERE deviceId = :d AND ts >= :f AND ts <= :t
+                        AND (tsSuspect IS NULL OR tsSuspect <> 1)) AS rr
                 """, arguments: ["d": deviceId, "f": from, "t": to,
                                  "rrx": RRSourceChannel.spo2Ibi.rawValue,
                                  "whoop4Historical": RRSourceChannel.whoop4Historical.rawValue]) else { return "" }
@@ -440,13 +443,20 @@ extension WhoopStore {
     /// wall clock and 0x80 adds a partial second copy of 8-33 % of it, so the pair read 1.01-1.31 and the
     /// #1118 coverage gate refused whichever nights happened to bank more 0x80. Neither channel is a
     /// duplicate to exclude by name. Which one is complete is a property of the capture, not of the tag,
-    /// so the read keeps green alone when it holds MORE beats in the requested window than the amplitude
-    /// family (0x60 + 0x44, see `scorableOuraChannels`), and the amplitude family alone otherwise, ties
-    /// included. A ring with only one of them keeps it, which is the guarantee the exclusion above was
-    /// protecting. NULL rows and every
-    /// non-Oura code are untouched, so WHOOP and pre-v32 rows read exactly as before. Same shape as the
-    /// WHOOP 5 transport selection below: an uncorrelated subquery over the SAME time/suspect predicates
-    /// as the outer read, evaluated before LIMIT.
+    /// so the read keeps green alone when it holds MORE beats than the amplitude family (0x60 + 0x44, see
+    /// `scorableOuraChannels`), and the amplitude family alone otherwise, ties included. A ring with only
+    /// one of them keeps it, which is the guarantee the exclusion above was protecting. NULL rows and every
+    /// non-Oura code are untouched, so WHOOP and pre-v32 rows read exactly as before.
+    ///
+    /// The choice is made per UTC HOUR of the requested window, not once for the whole window. The two
+    /// channels overlap at night but are disjoint in time across a day: 0x60 is banked only overnight and
+    /// 0x80 carries every daytime beat. A single whole-window count let a night's 0x60 outvote the day's
+    /// 0x80 on any read that crossed wake, and dropped every daytime beat with it, so a day-wide timeline
+    /// drew windowed rMSSD for the night and nothing after. Per hour, an hour where both fire still keeps
+    /// the fuller one, and an hour where only one fires keeps that one. Each hour is counted over its part
+    /// of the requested window with the SAME time/suspect predicates as the outer read, before LIMIT, so a
+    /// window inside one hour reads exactly as the whole-window rule did. Same shape as the WHOOP 4
+    /// per-hour source choice below.
     ///
     /// Rows are FILTERED, never deleted: the 0x6E stream stays on disk as the cross-check on green.
     /// Every R-R consumer reads through this one function, so the `hrv diag` trace moves with the scores
@@ -469,7 +479,7 @@ extension WhoopStore {
             // A WHOOP 4 has labelled type-47 history, type-40 realtime, standard-BLE, and legacy
             // unlabelled rows. Choose one source per UTC hour in provenance order, so overlapping live
             // transports are never merged and partial history takes precedence only where it exists.
-            // Every other source takes the Oura branch: one beat channel for the interval, the fuller one
+            // Every other source takes the Oura branch: one beat channel per UTC hour, the fuller one
             // (see the doc comment on `rrIntervals`), with NULL and non-Oura codes passing untouched.
             let strictWhoop4History: Bool
             if strictWhoop5 { strictWhoop4History = false }
@@ -481,15 +491,10 @@ extension WhoopStore {
                         arguments: [deviceId, RRSourceChannel.whoop4Historical.rawValue]) ?? false
                 }
             }
-            let sourcePredicate = strictWhoop5 ? """
+            let whoop5SourcePredicate = """
                 srcChannel = (SELECT MIN(srcChannel) FROM rrInterval
                     WHERE deviceId = :d AND ts >= :f AND ts <= :t AND srcChannel IN \(Self.scorableWhoop5Channels)
                     AND (tsSuspect IS NULL OR tsSuspect <> 1))
-                """ : """
-                (srcChannel IS NULL OR srcChannel NOT IN \(Self.scorableOuraChannels) OR (srcChannel = 1) = (
-                    SELECT SUM(srcChannel = 1) > SUM(srcChannel <> 1) FROM rrInterval
-                    WHERE deviceId = :d AND ts >= :f AND ts <= :t AND srcChannel IN \(Self.scorableOuraChannels)
-                    AND (tsSuspect IS NULL OR tsSuspect <> 1)))
                 """
             // The WHOOP 4 source decision is per UTC hour. Materialize one choice per hour, then join
             // that small result to the requested beats. Counting the same hour from every beat made
@@ -523,12 +528,34 @@ extension WhoopStore {
                       AND (r.tsSuspect IS NULL OR r.tsSuspect <> 1)
                     ORDER BY r.ts ASC, r.ord ASC, r.rrMs ASC, r.seq ASC LIMIT :lim
                     """
-            } else {
+            } else if strictWhoop5 {
                 sql = """
                     SELECT ts, rrMs, srcChannel, ord, seq FROM rrInterval
                     WHERE deviceId = :d AND ts >= :f AND ts <= :t
                     AND (srcChannel IS NULL OR srcChannel <> :rrx)
-                    AND \(sourcePredicate)
+                    AND \(whoop5SourcePredicate)
+                    AND (tsSuspect IS NULL OR tsSuspect <> 1)   -- exclude future-stamped (#1073) and 500 ms fill (#2371) beats
+                    ORDER BY ts ASC, ord ASC, rrMs ASC, seq ASC LIMIT :lim
+                    """
+            } else {
+                // One Oura channel per UTC hour, counted inside the requested window. LEFT JOIN: only
+                // scorable Oura rows create an hour's choice, and NULL / non-Oura rows must pass whether
+                // or not their hour has one. The outer table stays unaliased so its column names read
+                // exactly as in the other branches.
+                sql = """
+                    WITH ouraHourChoice AS MATERIALIZED (
+                        SELECT ts / 3600 AS hour, SUM(srcChannel = 1) > SUM(srcChannel <> 1) AS keepGreen
+                        FROM rrInterval
+                        WHERE deviceId = :d AND ts >= :f AND ts <= :t AND srcChannel IN \(Self.scorableOuraChannels)
+                          AND (tsSuspect IS NULL OR tsSuspect <> 1)
+                        GROUP BY ts / 3600
+                    )
+                    SELECT ts, rrMs, srcChannel, ord, seq FROM rrInterval
+                    LEFT JOIN ouraHourChoice h ON h.hour = rrInterval.ts / 3600
+                    WHERE deviceId = :d AND ts >= :f AND ts <= :t
+                    AND (srcChannel IS NULL OR srcChannel <> :rrx)
+                    AND (srcChannel IS NULL OR srcChannel NOT IN \(Self.scorableOuraChannels)
+                         OR (srcChannel = 1) = h.keepGreen)
                     AND (tsSuspect IS NULL OR tsSuspect <> 1)   -- exclude future-stamped (#1073) and 500 ms fill (#2371) beats
                     ORDER BY ts ASC, ord ASC, rrMs ASC, seq ASC LIMIT :lim
                     """

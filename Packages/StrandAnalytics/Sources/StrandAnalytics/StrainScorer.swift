@@ -280,6 +280,33 @@ public enum StrainScorer {
         return acc
     }
 
+    /// Minutes in each Edwards zone, indexed by the zone's own weight: `[0]` is time BELOW zone 1,
+    /// `[1...5]` are zones 1 to 5.
+    ///
+    /// `[0]` is the bucket no existing line can show. Edwards scores sub-50 %HRR time as exactly zero, so
+    /// it never reaches `trimp` and nothing downstream reports it, yet it is the quantity #2438's step 2
+    /// proposes to weight. `[1...5]` are the zone shares step 1 fits its weights on, readable until now
+    /// only from a WHOOP export rather than from what NOOP itself saw.
+    ///
+    /// Sums to the same duration TRIMP integrates over, so the six buckets and `trimp` describe exactly
+    /// the same time. That is CREDITED time, not wall-clock wear: `sampleDurationsMinutes` clamps each
+    /// reading to `maxSampleGapMin`, so a ten-minute dropout contributes two minutes here. Anyone wanting
+    /// a wear-coverage floor (#2438 step 2) needs a different quantity, and summing these will not give
+    /// it to them.
+    ///
+    /// The caller must pass `hrReserve > 0`: `zoneWeight` divides by it, and the refusal path reaches this
+    /// line with a reserve that can be zero or negative.
+    ///
+    /// Byte-identical to the Kotlin twin `StrainScorer.zoneMinutes`.
+    static func zoneMinutes(_ hr: [HRSample], restingHR: Double, hrReserve: Double,
+                            durations: [Double]) -> [Double] {
+        var out = [Double](repeating: 0.0, count: 6)
+        for i in hr.indices {
+            out[zoneWeight(Double(hr[i].bpm), restingHR: restingHR, hrReserve: hrReserve)] += durations[i]
+        }
+        return out
+    }
+
     /// - Parameter floorRatePerMinute: per-minute rate treated as "no effort" and subtracted from EVERY
     ///   sample, floored at zero (#1624). Zero — the default — is the original, unfloored Banister recipe,
     ///   so every existing caller and test is byte-identical. Pass `banisterBaselineRatePerMinute` to
@@ -437,6 +464,90 @@ public enum StrainScorer {
         return out
     }
 
+    /// The ` sustained=` field appended to `dayCalibrationLine`: the same day's peak held across
+    /// consecutive samples (`sustainedPeak`), so a run of lines shows how much of each day's `peak` was a
+    /// single sample. Its own function, appended by the caller, so the calibration line's existing
+    /// contract stays as it is. Same formatter as the fields before it; nil renders as `nil`, not 0.
+    ///
+    /// Byte-identical to the Kotlin twin `sustainedPeakField`.
+    public static func sustainedPeakField(_ sustainedPeak: Double?) -> String {
+        " sustained=\(WorkoutDetector.round0(sustainedPeak))"
+    }
+
+    /// Consecutive samples a `sustained` peak must hold for, and the span they must fit in.
+    public static let sustainedPeakSamples = 5
+    public static let sustainedPeakWindowS = 60
+
+    /// The highest bpm that `sustainedPeakSamples` consecutive samples all reached within
+    /// `sustainedPeakWindowS` seconds, or nil when no run of samples is that dense.
+    ///
+    /// The `sustained` field beside the raw `peak` on the `effort calib` line (#2438). On ring days the raw
+    /// daily maximum is nearly always one isolated sample: over 60 days of Oura heart rate it sat above the
+    /// age formula on 58 days, and this value on none, while 98 % of the samples at or above 165 bpm lay in
+    /// a ±30 s window whose median was under 120. A step-0 rule read off the raw peak would raise a ring
+    /// wearer's HRmax from artefacts, so contributed logs carry both, and the rule can be written against
+    /// whichever one holds up on straps.
+    ///
+    /// The minimum over each run, not its mean: one spike inside five ordinary samples must not lift the
+    /// value, which is the whole point of the field. nil rather than a fallback to the raw peak, so a sparse
+    /// day reads as "not measured" and not as "held".
+    ///
+    /// Byte-identical to the Kotlin twin `sustainedPeak`.
+    public static func sustainedPeak(_ hr: [HRSample],
+                                     samples: Int = sustainedPeakSamples,
+                                     windowS: Int = sustainedPeakWindowS) -> Double? {
+        guard samples > 0, hr.count >= samples else { return nil }
+        // Ordered by (ts, bpm), not ts alone: Swift's sort is not stable and Kotlin's is, so two samples
+        // sharing a second could otherwise form different runs on the two platforms.
+        let sorted = hr.sorted { ($0.ts, $0.bpm) < ($1.ts, $1.bpm) }
+        var best: Int?
+        for i in 0 ... (sorted.count - samples) {
+            let last = i + samples - 1
+            guard sorted[last].ts - sorted[i].ts <= windowS else { continue }
+            let held = sorted[i ... last].lazy.map { $0.bpm }.min() ?? sorted[i].bpm
+            best = max(best ?? held, held)
+        }
+        return best.map(Double.init)
+    }
+
+    /// The ` span=` field appended after `sustained=`: how many seconds the run behind that value covered
+    /// (`sustainedPeakSpan`). Its own function, appended by the caller, like `sustainedPeakField`. nil
+    /// renders as `nil`, not 0.
+    ///
+    /// Byte-identical to the Kotlin twin `sustainedPeakSpanField`.
+    public static func sustainedPeakSpanField(_ spanS: Int?) -> String {
+        " span=\(spanS.map(String.init) ?? "nil")"
+    }
+
+    /// The seconds covered by the run that sets `sustainedPeak`, or nil when that is nil.
+    ///
+    /// `sustainedPeak` bounds a run's span from above only, so the same value can stand for five samples
+    /// inside four seconds of dense heart rate or across a whole minute of sparse heart rate. On one ring
+    /// with all-day heart rate the winning run covered 4 s on some days and 57 s on others. This field
+    /// carries the span beside the value, so a contributed log says which kind of hold it was.
+    ///
+    /// When several runs reach the same value, the longest span among them: the strongest evidence that
+    /// the value was held. Same rule and same ordering as `sustainedPeak`, so the two fields always
+    /// describe the same run.
+    ///
+    /// Byte-identical to the Kotlin twin `sustainedPeakSpan`.
+    public static func sustainedPeakSpan(_ hr: [HRSample],
+                                         samples: Int = sustainedPeakSamples,
+                                         windowS: Int = sustainedPeakWindowS) -> Int? {
+        guard samples > 0, hr.count >= samples else { return nil }
+        let sorted = hr.sorted { ($0.ts, $0.bpm) < ($1.ts, $1.bpm) }
+        var best: (held: Int, span: Int)?
+        for i in 0 ... (sorted.count - samples) {
+            let last = i + samples - 1
+            let span = sorted[last].ts - sorted[i].ts
+            guard span <= windowS else { continue }
+            let held = sorted[i ... last].lazy.map { $0.bpm }.min() ?? sorted[i].bpm
+            if let b = best, (b.held, b.span) >= (held, span) { continue }
+            best = (held, span)
+        }
+        return best?.span
+    }
+
     /// One line naming what an Effort score was computed FROM, or why it could not be computed.
     ///
     /// The gap this closes: `strain` is the only score in the app with no trace at all. WorkoutDetector,
@@ -447,10 +558,14 @@ public enum StrainScorer {
     ///
     /// `enough` is the `strain` gate spelled out: dense (>= minReadings) OR sparse-but-sustained. `trimp`
     /// and `strain` are absent when the gate refused, which is exactly the case a bare 0 hides.
-    /// Byte-identical to the Kotlin `StrainScorer.scoreFunnelLine`.
+    /// Kotlin twin: `StrainScorer.scoreFunnelLine`. Phrased with the word "twin" deliberately:
+    /// the scanner's claim patterns require it, so the previous "Byte-identical to the Kotlin ..."
+    /// read as a twin claim to a human and was invisible to the ledger, which is why adding an
+    /// argument here orphaned both identities instead of re-forming the pair at the new arity.
     public static func scoreFunnelLine(day: String, hrSamples: Int, enough: Bool,
                                        maxHR: Double, maxHRProvided: Bool, restingHR: Double,
-                                       method: Method, trimp: Double?, strain: Double?) -> String {
+                                       method: Method, trimp: Double?, strain: Double?,
+                                       zoneMinutes: [Double]? = nil) -> String {
         func r1(_ v: Double) -> String { String(format: "%.1f", v) }
         // Built by appending rather than as one `+` chain. A chain of interpolated segments is a single
         // expression, and this one blew the type-checker's budget on the first attempt — the same failure
@@ -466,6 +581,15 @@ public enum StrainScorer {
         // byte, so this is the one spelling that keeps them equal.
         out += " method=\(method)"
         out += " trimp=\(trimpText) strain=\(strainText)"
+        // Per-zone minutes, appended last so every field before this one keeps its position and the
+        // existing parsers are unaffected. Absent rather than zeroed when the reserve is invalid: a
+        // refused day has no zones, and six zeros would read as a day spent entirely below zone 1.
+        // Built with a statement loop for the same type-checker reason as the fields above.
+        if let zones = zoneMinutes, zones.count == 6 {
+            for i in 0..<6 { out += " z\(i)=\(r1(zones[i]))" }
+        } else {
+            out += " zones=n/a"
+        }
         return out
     }
 
@@ -518,9 +642,17 @@ public enum StrainScorer {
                                  durations: durations)
         }
         let scored = trimpToStrain(trimp, denominator: denominator)
+        // Walked only when a sink is attached. It is a second O(n) pass over the day's samples, and
+        // `analyzeRecent`'s prep is already the expensive half of a scoring run, so a normal pass must
+        // not pay for a diagnostic nobody is reading. `hrReserve` is safe here: the refusal path above
+        // already returned for `effMax <= restingHR`.
+        // Emitted under BOTH methods on purpose. The zones describe what the day WAS, not how it was
+        // scored, and #2438 fits an Edwards-shaped model regardless of the recipe in force.
+        let zones: [Double]? = diag == nil ? nil
+            : zoneMinutes(hr, restingHR: restingHR, hrReserve: hrReserve, durations: durations)
         diag?(scoreFunnelLine(day: day, hrSamples: hr.count, enough: enoughData, maxHR: effMax,
                               maxHRProvided: maxHR != nil, restingHR: restingHR, method: method,
-                              trimp: trimp, strain: scored))
+                              trimp: trimp, strain: scored, zoneMinutes: zones))
         return scored
     }
 }
