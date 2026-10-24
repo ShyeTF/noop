@@ -43,13 +43,11 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     }
 
     /// Persist the bundle-language override. Foundation observes it on the next process launch.
+    ///
+    /// Nutry : volontairement sans effet. L'app hôte reste forcée en français (NutryNoopLocalization) et
+    /// ce module ne doit jamais écrire la préférence de langue système de toute l'app Nutry.
     static func apply(_ raw: String, defaults: UserDefaults = .standard) {
-        let language = resolve(raw)
-        if language == .system {
-            defaults.removeObject(forKey: "AppleLanguages")
-        } else {
-            defaults.set([language.rawValue], forKey: "AppleLanguages")
-        }
+        _ = resolve(raw)
     }
 
     /// Locale used by SwiftUI format styles for the language that the currently-running bundles chose.

@@ -128,9 +128,6 @@ struct SettingsView: View {
     @AppStorage("appIcon.alt") private var useNavyIcon = false
     // Light/Dark/System theme. Read by both app roots' .preferredColorScheme; default follows the OS.
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.system.rawValue
-    // App-owned copy language. Apple binds a bundle localization at process launch, so this writes the
-    // standard AppleLanguages override and takes effect after the user reopens NOOP.
-    @AppStorage(AppLanguage.storageKey) private var appLanguageRaw = AppLanguage.system.rawValue
     // Chart colour style: Titanium (brand) or Classic (throwback red→green). Re-colours gauges + charts.
     @AppStorage(ChartStyle.storageKey) private var chartStyleRaw = ChartStyle.titanium.rawValue
     // Sleep tab stage-CHART shape: Classic per-stage rows, or the WHOOP-style stepped hypnogram Filled/Ribbon.
@@ -1104,28 +1101,8 @@ struct SettingsView: View {
             blurb: "Choose Light, Dark, or follow your system. Dark is the signature near-black; Light keeps the same clean look on a bright canvas."
         ) {
             VStack(spacing: 0) {
-                // App-owned copy language. Apple binds a bundle localization at process launch, so this
-                // takes effect after the user reopens NOOP (the note below says so). Sits above the theme
-                // controls because it re-words everything under it.
-                FormRow(label: "Language") {
-                    Picker("Language", selection: $appLanguageRaw) {
-                        ForEach(AppLanguage.allCases) { language in
-                            Text(language == .system ? String(localized: "System default") : language.autonym)
-                                .tag(language.rawValue)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .tint(StrandPalette.accent)
-                    .accessibilityLabel("Language")
-                    .onChangeCompat(of: appLanguageRaw) { AppLanguage.apply($0) }
-                }
-                Text("Language changes take effect after you reopen NOOP.")
-                    .font(StrandFont.footnote)
-                    .foregroundStyle(StrandPalette.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, NoopMetrics.space1)
-                rowDivider
+                // Nutry : pas de sélecteur de langue. Nutry reste forcé en français (NutryNoopLocalization) ;
+                // le sélecteur NOOP 12 (avec Italiano) écrivait `AppleLanguages` pour toute l'app hôte.
                 // #1821: sits with Language rather than in Units because it is an app-owned display
                 // CONVENTION, not a unit of measurement — and like Language it offers "System default",
                 // which here means the device's own 24-Hour Time switch rather than the region default.
