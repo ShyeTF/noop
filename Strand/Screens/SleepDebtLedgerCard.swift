@@ -98,7 +98,7 @@ struct SleepDebtLedgerCard: View {
         }
         .frame(height: 56)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Per-night sleep balance: \(ledger.nightCount) nights, net \(debtSigned(ledger.balanceMin))")
+        .accessibilityLabel(String(localized: "Per-night sleep balance: \(ledger.nightCount) nights, net \(debtSigned(ledger.balanceMin))"))
     }
 
     // MARK: - Sleep-debt ledger formatting (verbatim lift of the ledger-only SleepView helpers)

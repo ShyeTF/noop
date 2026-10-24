@@ -333,7 +333,7 @@ struct LiveSessionSummarySheet: View {
                 HStack {
                     Text("Band").font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                     Spacer()
-                    Text("\(Int(row.floorBpm.rounded()))–\(Int(row.ceilingBpm.rounded())) bpm")
+                    Text(String(localized: "\(Int(row.floorBpm.rounded()))–\(Int(row.ceilingBpm.rounded())) bpm"))
                         .font(StrandFont.captionNumber).foregroundStyle(StrandPalette.textPrimary)
                 }
             }

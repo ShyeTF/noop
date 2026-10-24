@@ -197,7 +197,7 @@ struct RecentWorkoutChip: View {
             .contentShape(Capsule())
         }
         .nativeLiquidGlassWorkoutSelectionControl(capsule: true)
-        .accessibilityLabel(Text("\(sport.name) workout"))
+        .accessibilityLabel(Text(String(localized: "\(sport.name) workout")))
         .accessibilityHint(Text("Double tap to start"))
     }
 }
@@ -251,7 +251,7 @@ struct WorkoutSelectionCard: View {
         .buttonStyle(LiquidPressStyle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(accessibilityLabelText))
-        .accessibilityHint(Text("Double tap to \(actionVerb.lowercased())"))
+        .accessibilityHint(Text(String(localized: "Double tap to \(actionVerb.lowercased())")))
         .accessibilityAddTraits(.isButton)
     }
 

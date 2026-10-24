@@ -24,6 +24,7 @@ struct ScreenScaffold<Content: View, Trailing: View>: View {
     /// Defaults to `EmptyView` via the convenience init below, so other screens are unaffected.
     @ViewBuilder var trailing: () -> Trailing
     @ViewBuilder var content: () -> Content
+    @Environment(\.nutryWhoopHosted) private var nutryWhoopHosted
 
     // iPad runs the shared screens full-screen, where an uncapped column gives 120+ character lines
     // in landscape. On iOS regular width (iPad) the readable column is capped + centred; compact
@@ -78,7 +79,7 @@ struct ScreenScaffold<Content: View, Trailing: View>: View {
                 StrandPalette.surfaceBase
                 topBackground
             }
-            .ignoresSafeArea()
+            .ignoresSafeArea(edges: nutryWhoopHosted ? [.bottom, .horizontal] : .all)
         }
         .modifier(RefreshableIfNeeded(onRefresh: onRefresh))
         #if os(macOS)
@@ -195,7 +196,7 @@ struct SyncingHistoryNote: View {
         HStack(spacing: 10) {
             StatePill("Syncing strap history…", tone: .accent, pulsing: true)
             if chunks > 0 {
-                Text("\(chunks) chunks pulled")
+                Text(String(localized: "\(chunks) chunks pulled"))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textSecondary)
             }

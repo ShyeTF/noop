@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import WhoopStore
+import StrandAnalytics
 import OuraProtocol
 
 /// Runs exactly ONE device's live BLE at a time, driven by `DeviceRegistry.activeDeviceId`.
@@ -56,6 +57,9 @@ final class SourceCoordinator: ObservableObject {
     /// previously invisible). Passed straight into `StandardHRSource`. Defaults to a no-op so existing
     /// call sites (and tests) compile unchanged.
     private let straplog: (String) -> Void
+    /// Item 27: the learned night band an Oura ring's all-day HR hold stands down for (nil = cold start).
+    /// Read at each decision by `OuraLiveSource`; the app layer derives it from the sleep learner.
+    private let ouraNightBand: () -> NightStandDown.Band?
 
     // MARK: - State
 
@@ -115,7 +119,8 @@ final class SourceCoordinator: ObservableObject {
          setWhoopPreferredPeripheral: @escaping (String?) -> Void,
          setWhoopActiveDeviceId: @escaping (String) -> Void,
          connectedPeripheralUUID: AnyPublisher<String?, Never>,
-         straplog: @escaping (String) -> Void = { _ in }) {
+         straplog: @escaping (String) -> Void = { _ in },
+         ouraNightBand: @escaping () -> NightStandDown.Band? = { nil }) {
         self.registry = registry
         self.live = live
         self.storeHandle = storeHandle
@@ -125,6 +130,7 @@ final class SourceCoordinator: ObservableObject {
         self.setWhoopActiveDeviceId = setWhoopActiveDeviceId
         self.connectedPeripheralUUID = connectedPeripheralUUID
         self.straplog = straplog
+        self.ouraNightBand = ouraNightBand
     }
 
     // MARK: - Wiring
@@ -275,8 +281,13 @@ final class SourceCoordinator: ObservableObject {
         // scan is the fallback only when the registry row has no/invalid identifier.
         if let pid = peripheralId(for: id), let uuid = UUID(uuidString: pid) {
             source.connect(uuid)
-        } else {
+        } else if NutryWhoopPairingGate.allowsPairingScan() {
+            // #221: a registered row with no Bluetooth identity has nothing to connect TO, so this is a
+            // blind service scan. It never adopts anything on its own (each source only connects its own
+            // `pendingConnectID`), but Nutry still does not open the radio for it outside a pairing screen.
             source.scan()
+        } else {
+            straplog("Source \(id): no Bluetooth identity recorded — not scanning outside the pairing screen (221)")
         }
         activeSource = source
         activeStrapId = id
@@ -434,6 +445,8 @@ final class SourceCoordinator: ObservableObject {
                     }
                 }
             },
+            allDayLiveHR: { UserDefaults.standard.bool(forKey: AppModel.ouraAllDayLiveHRKey) },   // item 27
+            nightBand: ouraNightBand,   // item 27
             log: straplog,
             onBattery: { [live] pct in live.setBattery(Double(pct)) },
             onModel: { [registry] model in registry.setModel(id, model: model) },   // #772: correct a name-guessed gen
@@ -545,6 +558,15 @@ final class SourceCoordinator: ObservableObject {
         let activeId = registry.activeDeviceId
         guard isWhoop(activeId),
               let device = registry.devices.first(where: { $0.id == activeId }) else { return }
+
+        // #221 (privacy): this `setPeripheralId` is the write that made a strap Nutry had captured BY ITSELF
+        // look paired for good — the registry identity is what `hasAdoptedBleIdentity`, « Appairé » and the
+        // auto-reconnect flag are all read off. The engine can no longer connect an unassociated strap, but
+        // the adoption refuses one too, so no second path can re-create the state.
+        guard NutryWhoopPairingGate.allowsIdentityAdoption(of: uuid) else {
+            live.append(log: "Identité Bluetooth \(uuid) ignorée : ce bracelet n’a pas été associé dans Nutry (221).")
+            return
+        }
 
         switch device.peripheralId {
         case .none:

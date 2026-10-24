@@ -23,11 +23,14 @@ final class UpdateChecker: ObservableObject {
     }
 
     /// Always `nil`: Nutry must not read or advertise foreign NOOP IPA releases.
+    /// Verified dead — no URLSession, no api.github.com, no noop.fans.
     static func fetchLatest() async -> Release? {
-        nil
+        assert(NutryHostedEgress.isEmbeddedInNutry)
+        return nil
     }
 
     func check(currentVersion: String) {
+        // Loud path still answers "up to date" without touching the network.
         state = .upToDate(version: currentVersion)
     }
 

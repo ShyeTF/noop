@@ -162,7 +162,7 @@ struct IntelligenceView: View {
                                 color: StrandPalette.textPrimary
                             )
                             .shadow(color: .black.opacity(0.5), radius: 6, y: 1)
-                            Text("± \(Int(f.band.rounded())) · \(StrandPalette.recoveryState(f.charge))")
+                            Text(String(localized: "± \(Int(f.band.rounded())) · \(StrandPalette.recoveryState(f.charge))"))
                                 .font(StrandFont.captionNumber)
                                 .foregroundStyle(StrandPalette.textSecondary)
                         }
@@ -171,13 +171,13 @@ struct IntelligenceView: View {
                     .padding(.top, 4)
                     .padding(.bottom, 6)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Tomorrow's Charge estimate \(Int(f.charge.rounded())) plus or minus \(Int(f.band.rounded()))")
+                    .accessibilityLabel(String(localized: "Tomorrow's Charge estimate \(Int(f.charge.rounded())) plus or minus \(Int(f.band.rounded()))"))
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("You'll likely wake around \(Int(f.charge.rounded())) ± \(Int(f.band.rounded())) Charge if you sleep about \(sleepHoursLabel(f.plannedSleepHours)) tonight.")
+                        Text(String(localized: "You'll likely wake around \(Int(f.charge.rounded())) ± \(Int(f.band.rounded())) Charge if you sleep about \(sleepHoursLabel(f.plannedSleepHours)) tonight."))
                             .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Estimate from today's effort, your typical sleep and your \(f.nights)-night recovery baseline, not a measurement. Your real Charge is scored from tomorrow's HRV when you wake.")
+                        Text(String(localized: "Estimate from today's effort, your typical sleep and your \(f.nights)-night recovery baseline, not a measurement. Your real Charge is scored from tomorrow's HRV when you wake."))
                             .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -203,7 +203,7 @@ struct IntelligenceView: View {
                         .accessibilityHidden(true)
                     Text("How this works").font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
                 }
-                Text("Charge weighs your HRV against your personal baseline (~55%), resting heart rate (~20%), rest quality (~15%), respiration (~5%) and skin-temperature deviation (~5%). Effort is a 0-\(UnitFormatter.effortScaleMax(effortScale)) cardiovascular load from time in heart-rate zones. Rest is staged from movement and heart rate. Everything is computed here from the strap's raw data. It works for any day NOOP collected raw streams.")
+                Text(String(localized: "Charge weighs your HRV against your personal baseline (~55%), resting heart rate (~20%), rest quality (~15%), respiration (~5%) and skin-temperature deviation (~5%). Effort is a 0-\(UnitFormatter.effortScaleMax(effortScale)) cardiovascular load from time in heart-rate zones. Rest is staged from movement and heart rate. Everything is computed here from the strap's raw data. It works for any day NOOP collected raw streams."))
                     .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 // The Charge model made concrete — the five weighted inputs, each its own metric accent.
@@ -217,7 +217,7 @@ struct IntelligenceView: View {
                     HStack {
                         Text(String(localized: "Effort")).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                         Spacer()
-                        Text("0-\(UnitFormatter.effortScaleMax(effortScale)) scale")
+                        Text(String(localized: "0-\(UnitFormatter.effortScaleMax(effortScale)) scale"))
                             .font(StrandFont.captionNumber).foregroundStyle(StrandPalette.effortColor)
                     }
                     .padding(.top, 2)
@@ -242,7 +242,7 @@ struct IntelligenceView: View {
             LiquidTube(frac: min(1, max(0, fraction / 0.55)), tint: color, height: 8, animated: false)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label): \(percent) of Charge")
+        .accessibilityLabel(String(localized: "\(label): \(percent) of Charge"))
     }
 
     private func dayCard(_ d: IntelligenceEngine.Computed) -> some View {

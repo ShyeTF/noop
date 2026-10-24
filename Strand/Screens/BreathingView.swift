@@ -293,7 +293,7 @@ private struct BreathingContent: View {
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
                 Text("·").foregroundStyle(StrandPalette.textTertiary)
-                Text("\(breathCount) breaths")
+                Text(String(localized: "\(breathCount) breaths"))
                     .font(StrandFont.captionNumber)
                     .foregroundStyle(StrandPalette.textSecondary)
             }
@@ -1143,7 +1143,7 @@ private struct ResonanceModeView: View {
                 rsaCurve(result.scores)
 
                 if let date = BiofeedbackPrefs.lockedPaceDate, result.didLock {
-                    Text("Locked \(date.formatted(date: .abbreviated, time: .omitted)) · paces drift, re-measure anytime.")
+                    Text(String(localized: "Locked \(date.formatted(date: .abbreviated, time: .omitted)) · paces drift, re-measure anytime."))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -1169,7 +1169,7 @@ private struct ResonanceModeView: View {
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
                 if let date = BiofeedbackPrefs.lockedPaceDate {
-                    Text("Locked \(date.formatted(date: .abbreviated, time: .omitted)). Switch to Breathe to use it, or re-measure above.")
+                    Text(String(localized: "Locked \(date.formatted(date: .abbreviated, time: .omitted)). Switch to Breathe to use it, or re-measure above."))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1337,7 +1337,7 @@ private struct CalmModeView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let h0 = controller.calmStartHR {
-                    Text("Started at \(h0) bpm · the rhythm trails your heart down.")
+                    Text(String(localized: "Started at \(h0) bpm · the rhythm trails your heart down."))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)

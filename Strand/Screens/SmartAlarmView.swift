@@ -262,7 +262,7 @@ struct SmartAlarmView: View {
                     // card to do, so the qualifier belongs against the number it qualifies. Shown only
                     // when an override actually exists, because otherwise the picker IS the whole truth.
                     if !overrides.isEmpty, let next = nextStrapAlarmLabel {
-                        Text("Some days have a time of their own, set under the evening reminder below. Next buzz \(next).")
+                        Text(String(localized: "Some days have a time of their own, set under the evening reminder below. Next buzz \(next)."))
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textSecondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -270,24 +270,11 @@ struct SmartAlarmView: View {
                     }
                     Divider().overlay(StrandPalette.hairline)
                     alarmWeekdayPicker
-                    // #864: a WHOOP 5/MG only arms its firmware alarm when Experimental is on (see
-                    // BLEManager.armStrapAlarm, which logs "not armed" and returns otherwise). Without this
-                    // branch the card claimed "Armed on the strap itself" to a 5/MG owner whose strap was
-                    // NOT armed, an honest-data violation (reporter: 5/MG, Experimental off, never buzzed).
-                    // Mirrors the Android SmartAlarmScreen StrapAlarmCard wording exactly. The else copy
-                    // was truth-synced once a real 4.0 wake was confirmed (PR #535: official-app wire
-                    // capture + on-device buzz by the capture author); 5/MG remains unconfirmed, so this
-                    // gated branch keeps its honesty wording.
-                    if model.whoop5Detected && !PuffinExperiment.isEnabled {
-                        Text("Your WHOOP 5/MG won't arm this until Experimental mode is on (Settings, Experimental). Right now your wake time is saved but the strap is NOT armed. Even with Experimental on, a 5/MG strap-driven wake is still unconfirmed on our side, so keep a backup alarm.")
-                            .font(StrandFont.footnote)
-                            .foregroundStyle(StrandPalette.statusWarning)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else if model.whoop5Detected {
-                        // 5/MG with Experimental ON: the strap IS armed (the rev-4 puffin payload), but a
-                        // strap-driven wake has NEVER been captured on 5/MG - so the "confirmed on 4.0" copy
-                        // must NOT show here (#864 honesty). Keep the 5/MG-unconfirmed caveat.
-                        Text("Armed on the strap itself with the experimental 5/MG command. A strap-driven wake is still unconfirmed on 5/MG on our side (confirmed only on WHOOP 4.0), so keep a backup alarm for anything you truly can't miss.")
+                    // 5/MG: the rev-4 arm is always sent when the alarm is on (Protocol probes used to
+                    // gate it and left the strap silent while the UI claimed a next wake). Wakes remain
+                    // experimental — reported on 5.0/MG, not promised. WHOOP 4.0 is confirmed (#535).
+                    if model.whoop5Detected {
+                        Text("Armed on the strap with an experimental 5/MG command. Strap-driven wakes have been reported on 5.0 and MG, but are not guaranteed. Keep a backup alarm for anything you cannot miss.")
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textTertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -381,7 +368,7 @@ struct SmartAlarmView: View {
                             Text("Your usual wake time")
                                 .font(StrandFont.body)
                                 .foregroundStyle(StrandPalette.textPrimary)
-                            Text("The nudge fires \(WindDownNudge.sleepNeedMinutes / 60)h \(WindDownNudge.leadMinutes)m before this.")
+                            Text(String(localized: "The nudge fires \(WindDownNudge.sleepNeedMinutes / 60)h \(WindDownNudge.leadMinutes)m before this."))
                                 .font(StrandFont.footnote)
                                 .foregroundStyle(StrandPalette.textTertiary)
                             Text("This time does not wake you. It only decides when the evening reminder fires.")
@@ -394,13 +381,13 @@ struct SmartAlarmView: View {
                             .labelsHidden()
                             .accessibilityLabel("Your usual wake time")
                     }
-                    Text("You'll be reminded around \(timeLabel(WindDownNudge.nudgeMinuteOfDay())).")
+                    Text(String(localized: "You'll be reminded around \(timeLabel(WindDownNudge.nudgeMinuteOfDay()))."))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textSecondary)
                     // Answers "so what actually wakes me?" in the one place the question gets asked,
                     // beside the time that does not. Only shown when there IS a strap alarm to name.
                     if let next = nextStrapAlarmLabel {
-                        Text("Your strap alarm is what wakes you, next on \(next).")
+                        Text(String(localized: "Your strap alarm is what wakes you, next on \(next)."))
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -485,23 +472,12 @@ struct SmartAlarmView: View {
         return formatter.string(from: next)
     }
 
-    /// Whether switching the alarm on actually arms anything that will go off.
+    /// Whether switching the alarm on actually queues an arm that can go off.
     ///
-    /// A WHOOP 5/MG arms its firmware alarm only with Experimental on: `BLEManager.armStrapAlarm` logs
-    /// "not armed" and returns otherwise. That is the #864 case, reported by a 5/MG owner whose strap
-    /// never buzzed while this card told them it was armed, and the card carries a warning for it.
-    ///
-    /// A countdown is a promise, so it must not be made for an alarm that will not exist. On macOS there
-    /// is not even a fallback to fall back to: `scheduleSmartAlarmBackupNotification` is `#if os(iOS)`
-    /// with no `#else`, so in that state nothing whatsoever happens at the chosen time. Saying "Alarm in
-    /// 18 hours" directly above the line admitting the strap is NOT armed would reintroduce the exact
-    /// honesty bug one row up from its own fix.
-    ///
-    /// A strap that is merely disconnected is NOT excluded here: `armStrapAlarm` queues and arms on
-    /// reconnect, so the alarm is real and the countdown to it is true.
-    private var strapAlarmWillArm: Bool {
-        !(model.whoop5Detected && !PuffinExperiment.isEnabled)
-    }
+    /// Always true when the alarm is enabled: the 5/MG rev-4 write is sent (experimental wake), and a
+    /// disconnected strap is re-armed on the next connectSettled. The countdown must stay honest about
+    /// that queue — not about Protocol probes, which no longer gate the send.
+    private var strapAlarmWillArm: Bool { true }
 
     /// The one moment every alarm readout on this screen is derived from, or nil when nothing will fire.
     ///
@@ -624,12 +600,12 @@ struct SmartAlarmView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear \(Self.weekdayName(weekday)) override, use the default wake time")
+                .accessibilityLabel(String(localized: "Clear \(Self.weekdayName(weekday)) override, use the default wake time"))
             }
             DatePicker("", selection: overrideBinding(weekday, effective: effective),
                        displayedComponents: .hourAndMinute)
                 .labelsHidden()
-                .accessibilityLabel("\(Self.weekdayName(weekday)) wake time")
+                .accessibilityLabel(String(localized: "\(Self.weekdayName(weekday)) wake time"))
         }
     }
 

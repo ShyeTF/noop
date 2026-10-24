@@ -339,6 +339,57 @@ final class DeviceFamilyFramingTests: XCTestCase {
         }
     }
 
+    func testWhoop4SetAlarmRev1PayloadBytes() {
+        // epoch 1_700_000_000 → LE 00 f1 53 65; form 0x01; subseconds 0; haptic-mode 0.
+        let body = AlarmPayload.setAlarmRev1(epochSec: 1_700_000_000)
+        XCTAssertEqual(body.count, 9)
+        XCTAssertEqual(body, Self.hex("0100f1536500000000"))
+        // Subseconds + haptic-mode stay zero for any second within the minute (minute precision).
+        let near = AlarmPayload.setAlarmRev1(epochSec: 1_700_000_059)
+        XCTAssertEqual(Array(near.suffix(4)), [0, 0, 0, 0])
+        XCTAssertEqual(near[0], 0x01)
+    }
+
+    func testSmartAlarmScheduleSkipsPastMidnightToTomorrow() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 2 * 3600)! // Europe/Paris summer-ish fixed offset
+        // 2026-10-05 08:30 local; wake at 07:00 every day → tomorrow 07:00.
+        let now = cal.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 8, minute: 30))!
+        let next = SmartAlarmSchedule.nextFireDate(minutes: 7 * 60, weekdays: [], from: now, calendar: cal)!
+        XCTAssertEqual(cal.component(.day, from: next), 6)
+        XCTAssertEqual(cal.component(.hour, from: next), 7)
+        XCTAssertEqual(cal.component(.minute, from: next), 0)
+    }
+
+    func testSmartAlarmScheduleHonoursWeekdayAndEmptyMeansDaily() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        // Sunday 2026-10-04 10:00 UTC; ask for Monday 06:30 only.
+        let now = cal.date(from: DateComponents(year: 2026, month: 10, day: 4, hour: 10))!
+        let monday = SmartAlarmSchedule.nextFireDate(minutes: 6 * 60 + 30, weekdays: [2], from: now, calendar: cal)!
+        XCTAssertEqual(cal.component(.weekday, from: monday), 2)
+        XCTAssertEqual(cal.component(.hour, from: monday), 6)
+        XCTAssertEqual(cal.component(.minute, from: monday), 30)
+        // Empty weekdays = every day; still today if the time is ahead.
+        let laterToday = SmartAlarmSchedule.nextFireDate(minutes: 11 * 60, weekdays: [], from: now, calendar: cal)!
+        XCTAssertEqual(cal.component(.day, from: laterToday), 4)
+        XCTAssertEqual(cal.component(.hour, from: laterToday), 11)
+    }
+
+    func testSmartAlarmStatusNoteFrench() {
+        XCTAssertNil(SmartAlarmSchedule.statusNote(
+            enabled: false, bonded: true, lastArmReachedStrap: true, whoop5: false, rejectStreak: 0))
+        let queued = SmartAlarmSchedule.statusNote(
+            enabled: true, bonded: false, lastArmReachedStrap: nil, whoop5: true, rejectStreak: 0)!
+        XCTAssertTrue(queued.contains("dès qu’il sera relié"))
+        let experimental = SmartAlarmSchedule.statusNote(
+            enabled: true, bonded: true, lastArmReachedStrap: true, whoop5: true, rejectStreak: 0)!
+        XCTAssertTrue(experimental.contains("expérimental"))
+        let reject = SmartAlarmSchedule.statusNote(
+            enabled: true, bonded: true, lastArmReachedStrap: true, whoop5: false, rejectStreak: 2)!
+        XCTAssertTrue(reject.contains("n’a pas confirmé"))
+    }
+
     func testPuffinAlarmFramesMatchKotlinParityGoldens() {
         // Cross-platform parity pins: the Android FramingTest asserts these SAME three full-frame
         // hexes, so both platforms are locked to identical alarm bytes (the same pipeline whose

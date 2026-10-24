@@ -86,14 +86,6 @@ struct IntervalTimerView: View {
         }
     }
 
-    private var phaseTone: StrandTone {
-        switch phase {
-        case .work: return .accent
-        case .rest: return .neutral
-        case .done: return .positive
-        }
-    }
-
     private var isFinished: Bool { phase == .done }
 
     // MARK: Body
@@ -364,7 +356,7 @@ struct IntervalTimerView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
-                Text("\(range.lowerBound)-\(range.upperBound)\(unit.map { " \($0)" } ?? "") · step \(step)")
+                Text(String(localized: "\(range.lowerBound)-\(range.upperBound)\(unit.map { " \($0)" } ?? "") · step \(step)"))
                     .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
             }
             Spacer()

@@ -835,7 +835,7 @@ struct WorkoutsView: View {
                                  groups: [SportGroup], totalTimeH: Double) -> some View {
         let modal = modalSport(from: groups)
         VStack(alignment: .leading, spacing: 12) {
-            Text("Effort this \(effectiveRange.heroWord)")
+            Text(String(localized: "Effort this \(effectiveRange.heroWord)"))
                 .font(StrandFont.headline)
                 .foregroundStyle(StrandPalette.textPrimary)
             HStack(spacing: NoopMetrics.gap) {
@@ -1181,9 +1181,9 @@ struct WorkoutsView: View {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(StrandPalette.hrZoneColor(zone))
                     .frame(width: 9, height: 9)
-                Text("Z\(zone)" as String).strandOverline()
+                Text(String(localized: "Z\(zone)") as String).strandOverline()
             }
-            Text("\(Int((minutes / max(total, 0.001) * 100).rounded()))%")
+            Text(String(localized: "\(Int((minutes / max(total, 0.001) * 100).rounded()))%"))
                 .font(StrandFont.number(15))
                 .foregroundStyle(StrandPalette.textPrimary)
             Text(durationLabel(minutes * 60))
@@ -1950,7 +1950,12 @@ private struct WorkoutRecoveryTrendChart: View {
     }
 
     var body: some View {
-        Chart(displayPlots) { point in
+        // Bound once: `displayPlots` groups and downsamples on every read, and this chart is the one the
+        // note above calls out for putting several hundred marks on screen. The axis is derived from the
+        // SAME drawn collection, so the marks cannot span days the chart is not plotting.
+        let drawn = displayPlots
+        let axisDays = ChartAxisDays.spanning(drawn.map(\.date), targetLabels: 4)
+        Chart(drawn) { point in
             LineMark(
                 x: .value("Workout", point.date),
                 y: .value("Recovery", point.value)
@@ -1969,10 +1974,13 @@ private struct WorkoutRecoveryTrendChart: View {
             range: [StrandPalette.metricRose, StrandPalette.metricCyan, StrandPalette.metricPurple]
         )
         .chartLegend(.hidden)
+        // Day-aligned marks, not a requested count. This axis already formats day-only, so a sub-day
+        // stride from `.automatic(desiredCount:)` put two marks in one day carrying the SAME string, one
+        // over the other. Four labels kept, matching what the count asked for.
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+            AxisMarks(values: axisDays) { value in
                 AxisGridLine().foregroundStyle(StrandPalette.hairline)
-                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                AxisValueLabel(format: ChartAxisDays.labelFormat(for: axisDays))
                     .foregroundStyle(StrandPalette.textTertiary)
             }
         }

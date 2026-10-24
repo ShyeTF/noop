@@ -46,6 +46,8 @@ public struct OnboardingWizard: View {
 
     @State private var step: Step = .welcome
     @State private var glow = false
+    /// Tracks BLE bond without observing LiveState on the root body (avoids HR-tick flicker).
+    @State private var strapBonded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Low Power Mode / "Reduce motion in NOOP" pose these looping glows still too. Onboarding is
     /// first-run only, but a `repeatForever` is a `repeatForever` wherever it lives.
@@ -98,10 +100,11 @@ public struct OnboardingWizard: View {
         .onAppear { if !poseStill { glow = true } }
         // Isolated live observation — a hidden watcher slides Scan → celebration on bond
         // without subscribing the whole wizard to per-tick updates.
-        .background(BondWatcher(onBonded: handleBond))
+        .background(BondWatcher(onBonded: handleBond, onBondChange: { strapBonded = $0 }))
     }
 
     private func handleBond() {
+        strapBonded = true
         if step == .scan { withAnimation(StrandMotion.hero) { step = .bonded } }
     }
 
@@ -172,9 +175,16 @@ public struct OnboardingWizard: View {
             HStack(spacing: 14) {
                 PrimaryButton(title: ctaTitle, systemImage: ctaIcon, action: primaryAction)
                     .frame(maxWidth: .infinity)
+                    .disabled(scanContinueBlocked)
+                    .opacity(scanContinueBlocked ? 0.45 : 1)
             }
             .frame(maxWidth: 620)
         }
+    }
+
+    /// Dry onboarding must not skip BLE: Continue on Scan / Bonded stays locked until a real bond.
+    private var scanContinueBlocked: Bool {
+        (step == .scan || step == .bonded) && !strapBonded
     }
 
     private var progress: Double {
@@ -189,7 +199,9 @@ public struct OnboardingWizard: View {
         case .expectations: return String(localized: "I understand")
         case .bluetooth:  return String(localized: "Continue")
         case .wear:       return String(localized: "I'm wearing it")
-        case .scan:       return String(localized: "Continue")
+        case .scan:       return strapBonded
+            ? String(localized: "Continue")
+            : String(localized: "Waiting for strap…")
         case .bonded:     return String(localized: "Continue")
         case .profile:    return String(localized: "Save & Continue")
         case .importData: return String(localized: "Continue")
@@ -208,6 +220,7 @@ public struct OnboardingWizard: View {
     }
 
     private func primaryAction() {
+        if scanContinueBlocked { return }
         if step.isLast {
             onFinished()
         } else {
@@ -265,8 +278,14 @@ public struct OnboardingWizard: View {
 private struct BondWatcher: View {
     @EnvironmentObject private var live: LiveState
     let onBonded: () -> Void
+    var onBondChange: ((Bool) -> Void)? = nil
     var body: some View {
-        Color.clear.onChangeCompat(of: live.bonded) { newValue in if newValue { onBonded() } }
+        Color.clear
+            .onAppear { onBondChange?(live.bonded) }
+            .onChangeCompat(of: live.bonded) { newValue in
+                onBondChange?(newValue)
+                if newValue { onBonded() }
+            }
     }
 }
 
@@ -288,7 +307,7 @@ private struct WelcomeStep: View {
                     .font(StrandFont.title2)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .opacity(appear ? 1 : 0)
-                Text("A private window into your recovery, sleep and strain. Read straight from your strap, kept only on \(Platform.deviceNounPhrase).")
+                Text(String(localized: "A private window into your recovery, sleep and strain. Read straight from your strap, kept only on \(Platform.deviceNounPhrase)."))
                     .font(StrandFont.body)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .multilineTextAlignment(.center)
@@ -641,7 +660,7 @@ private struct ScanStep: View {
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
 
-                Text("WHOOP straps don't appear in your \(Platform.deviceNoun)'s Bluetooth settings. They advertise on a custom profile that only apps like NOOP can find, so there's nothing to pair there, and you shouldn't try.")
+                Text(String(localized: "WHOOP straps don't appear in your \(Platform.deviceNoun)'s Bluetooth settings. They advertise on a custom profile that only apps like NOOP can find, so there's nothing to pair there, and you shouldn't try."))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -820,7 +839,7 @@ private struct ProfileStep: View {
                 HStack(spacing: 8) {
                     Image(systemName: "bolt.heart")
                         .foregroundStyle(StrandPalette.accent)
-                    Text("Estimated max heart rate · \(profile.hrMax) bpm")
+                    Text(String(localized: "Estimated max heart rate · \(profile.hrMax) bpm"))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -1090,7 +1109,7 @@ private struct AppearanceStep: View {
                     .frame(height: 96)
                 SegmentedPillControl(AppearanceMode.allCases, selection: binding) { $0.label }
                     .frame(maxWidth: 320)
-                Text("System follows your \(Platform.deviceNoun)'s light or dark setting.")
+                Text(String(localized: "System follows your \(Platform.deviceNoun)'s light or dark setting."))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .multilineTextAlignment(.center)

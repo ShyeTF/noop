@@ -42,6 +42,11 @@ final class SyncLiveActivityController {
     private static let finalShownFor: TimeInterval = 8
     private static let chunkMinInterval: TimeInterval = 2
 
+    /// Asked before a foreground sync STARTS a banner; true holds it back. The Lift Log sets it for the
+    /// length of a gym session, whose own banner is the one on the Lock Screen. A banner the Sync Strap
+    /// shortcut started still updates and ends as before.
+    var holdsBackNewBanner: () -> Bool = { false }
+
     private init() {}
 
     func attach(to live: LiveState) {
@@ -79,6 +84,20 @@ final class SyncLiveActivityController {
         request(state: live.backfilling ? state(syncing(live)) : state(SyncActivityCopy.connecting()))
     }
 
+    /// #236 (Nutry): « Notification en direct WHOOP » was just switched off. End the banner now, with no
+    /// final state left on screen, instead of waiting for the sync to finish.
+    func endForNutryPreference() {
+        // Every one of them, including a banner an earlier process left behind.
+        let running = Activity<SyncActivityAttributes>.activities
+        activity = nil
+        lastPushedChunks = -1
+        guard !running.isEmpty else { return }
+        Task {
+            for banner in running { await banner.end(nil, dismissalPolicy: .immediate) }
+        }
+        live?.append(log: "Sync activity: ended — « Notification en direct WHOOP » switched off (236)")
+    }
+
     /// The shortcut found no model, or asked and nothing started: do not leave a "Connecting…" island up
     /// for a sync that is not coming.
     func shortcutDidNotStart() {
@@ -107,7 +126,7 @@ final class SyncLiveActivityController {
             return
         }
         // Only the foreground may start one. A background automatic sync stays silent, honestly.
-        guard UIApplication.shared.applicationState == .active else { return }
+        guard UIApplication.shared.applicationState == .active, !holdsBackNewBanner() else { return }
         startedAt = Date()
         request(state: state(syncing(live)))
     }
@@ -144,12 +163,26 @@ final class SyncLiveActivityController {
     private func request(state: SyncActivityAttributes.ContentState) {
         // Each refusal names its gate. These are rare-event lines (one per attempted start), so they stay
         // always-on rather than behind a Test Centre domain.
+        // #221 (Nutry): the second strap banner besides the heart-rate one. No associated strap, no strap
+        // work at all — same gate as the offload that would feed it. Nutry's own live-heart-rate zone is
+        // gated separately (`NutryBandSurface` / « Notification en direct WHOOP »).
+        guard NutryWhoopPairingGate.allowsStrapFeatures() else {
+            live?.append(log: "Sync activity: not started — \(NutryWhoopPairingGate.logSummary()) (221)")
+            return
+        }
+        // #236 (Nutry): « Notification en direct WHOOP » is the one switch for every WHOOP live banner,
+        // off by default. This one followed only the association, so a paired strap still put a sync
+        // banner on the Lock Screen with the switch off.
+        guard NutryWhoopLiveNotification.isEnabled else {
+            live?.append(log: "Sync activity: not started — « Notification en direct WHOOP » is off (236)")
+            return
+        }
         guard authInfo.areActivitiesEnabled else {
             live?.append(log: "Sync activity: not started — Live Activities are off for NOOP in iOS Settings")
             return
         }
         guard UnitPrefs.syncLiveActivityEnabled() else {
-            live?.append(log: "Sync activity: not started — \"Strap sync in Dynamic Island\" is off in NOOP Settings")
+            live?.append(log: "Sync activity: not started — \"Strap sync\" is off in NOOP Settings → Live notifications")
             return
         }
         if let activity { push(activity, state); return }

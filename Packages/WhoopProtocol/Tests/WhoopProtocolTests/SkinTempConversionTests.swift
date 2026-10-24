@@ -51,6 +51,19 @@ final class SkinTempConversionTests: XCTestCase {
                           skinTempCelsius(raw: 826, family: .whoop5), accuracy: 1e-6)
     }
 
+    /// The packet version wins over the registry label. Rows banked before the layout byte existed have no
+    /// version and stay on the registry family, including a night pegged at the 4.0 saturation value 2047.
+    func testPacketFamilyPrefersTheLayoutVersion() {
+        let v18 = SkinTempSample(ts: 1, raw: 3057, layoutVersion: 18)
+        XCTAssertEqual(SkinTempPacket.family(samples: [v18], registry: .whoop4), .whoop5)
+        let v24 = SkinTempSample(ts: 1, raw: 900, layoutVersion: 24)
+        XCTAssertEqual(SkinTempPacket.family(samples: [v24], registry: .whoop5), .whoop4)
+        let old = (0..<8).map { SkinTempSample(ts: $0, raw: 826) }
+        XCTAssertEqual(SkinTempPacket.family(samples: old, registry: .whoop4), .whoop4)
+        let pegged = (0..<8).map { SkinTempSample(ts: $0, raw: 2047) }
+        XCTAssertEqual(SkinTempPacket.family(samples: pegged, registry: .whoop4), .whoop4)
+    }
+
     /// The synthetic HistoricalV24Tests fixture banks skin_temp_raw = 900; under the family-aware map it is a
     /// plausible worn reading (was an impossible 9 °C under the old /100).
     func testWhoop4SyntheticFixtureRawIsPlausible() {

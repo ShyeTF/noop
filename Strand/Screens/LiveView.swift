@@ -453,7 +453,7 @@ struct LiveView: View {
                      row.strain.map { String(localized: "effort \(UnitFormatter.effortDisplay($0, scale: effortScale))") }].compactMap { $0 }
         return HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(StrandPalette.accent)
-            Text("Workout saved · \(parts.joined(separator: " · "))")
+            Text(String(localized: "Workout saved · \(parts.joined(separator: " · "))"))
                 .font(StrandFont.footnote).foregroundStyle(StrandPalette.textSecondary)
             Spacer(minLength: 0)
         }
@@ -479,7 +479,7 @@ struct LiveView: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
             .strokeBorder(StrandPalette.statusWarning.opacity(0.5), lineWidth: 1))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Reconnect help: \(guide)")
+        .accessibilityLabel(String(localized: "Reconnect help: \(guide)"))
     }
 
     private func pairingHintBanner(_ hint: String) -> some View {
@@ -501,7 +501,7 @@ struct LiveView: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
             .strokeBorder(StrandPalette.statusWarning.opacity(0.5), lineWidth: 1))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Pairing help: \(hint)")
+        .accessibilityLabel(String(localized: "Pairing help: \(hint)"))
     }
 
     /// Whether the low-bandwidth standard-HR fallback note should render. The note explains that live HR
@@ -538,7 +538,7 @@ struct LiveView: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
             .strokeBorder(StrandPalette.accent.opacity(0.4), lineWidth: 1))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Standard HR mode, low bandwidth. \(detail)")
+        .accessibilityLabel(String(localized: "Standard HR mode, low bandwidth. \(detail)"))
     }
 
     // MARK: - Strap picker
@@ -602,7 +602,7 @@ struct LiveView: View {
                             .foregroundStyle(StrandPalette.textPrimary)
                         // Name the band Scan will connect to, and point pairing/switching at Devices — so
                         // an offline user knows both what this button does and where to add a different band.
-                        Text("Scan connects to \(activeDeviceName). To pair or switch bands, open Devices.")
+                        Text(String(localized: "Scan connects to \(activeDeviceName). To pair or switch bands, open Devices."))
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -923,7 +923,7 @@ private struct LiveHeartReadout: View {
                         .font(StrandFont.caption)
                         .foregroundStyle(StrandPalette.textSecondary)
                     if liveZone >= 1 {
-                        Text("ZONE \(liveZone)")
+                        Text(String(localized: "ZONE \(liveZone)"))
                             .font(StrandFont.overline)
                             .tracking(StrandFont.overlineTracking)
                             .foregroundStyle(tint)
@@ -979,9 +979,6 @@ private struct LivePhysiology: View {
     /// Oura ring actively streaming live HR — trusted stream without a WHOOP bond (see LiveView.ringStreaming).
     private var ringStreaming: Bool { live.connected && live.streamingLiveHR }
 
-    /// The liquid heart pink (matches LiquidThread's default + the mockup #ff6b81).
-    private let liquidHeart = Color(.sRGB, red: 1, green: 107 / 255, blue: 129 / 255, opacity: 1)
-
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space4) {
             HStack(alignment: .firstTextBaseline) {
@@ -1000,12 +997,12 @@ private struct LivePhysiology: View {
                         Text("RMSSD")
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textTertiary)
-                        Text("\(Int(rmssd.rounded())) ms")
+                        Text(String(localized: "\(Int(rmssd.rounded())) ms"))
                             .font(StrandFont.number(24))
                             .foregroundStyle(StrandPalette.metricCyan)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Rolling RMSSD \(Int(rmssd.rounded())) milliseconds")
+                    .accessibilityLabel(String(localized: "Rolling RMSSD \(Int(rmssd.rounded())) milliseconds"))
                 }
             }
             rrTrace
@@ -1248,10 +1245,37 @@ private struct ActiveWorkoutLive: View {
     }
 }
 
-/// The strap log + export controls + Test Centre link. Owns LiveState so the streaming log lines
-/// re-render only this card. Wrapped in the liquid frosted card style.
+/// The strap log + export controls + Test Centre link. Wrapped in the liquid frosted card style.
+///
+/// This observes `LiveState` rather than scoping anything: a published change there invalidates every
+/// observer, so what this card controls is the COST of its own re-evaluation, not whether it happens.
 private struct LiveLogCard: View {
+    /// How many trailing lines the card RENDERS. The buffer stays `LiveState.maxLogLines` (5,000) and Copy /
+    /// Save / the export still read all of it, so nothing is lost by drawing less.
+    ///
+    /// #2521: this card used to render the whole buffer in a non-lazy `VStack`, so every appended line built
+    /// and diffed up to 5,000 rows while the visible viewport is 200pt, about fifteen lines. A history drain
+    /// plus a re-score burst emits hundreds of lines a minute, and the 80%-of-a-core CPU limit is per
+    /// process, so that cost landed on the main thread and the app was killed with `cpu_resource_fatal`
+    /// while it was not even frontmost.
+    private static let renderedTailLines = 200
+
     @EnvironmentObject private var live: LiveState
+    @EnvironmentObject private var model: AppModel
+    /// Backgrounded, nothing is on screen to keep current, and a `LiveState` publish still re-evaluates this
+    /// body because an `ObservableObject` invalidates every observer on ANY published change, not only the
+    /// property a view reads. So what is cut is the COST of that re-evaluation, which is what the CPU limit
+    /// measures: roughly fifteen built rows instead of five thousand, and none at all here.
+    ///
+    /// Not free, to be exact about what remains: the header, the `Divider` and the `NavigationLink` are still
+    /// built per line, and `NavigationLink(destination:)` constructs `TestCentreView()` eagerly, which
+    /// evaluates its `@State` defaults (three `UserDefaults` reads). Microseconds against the five thousand
+    /// `Text` views this removes, but the place to look first if a background cost survives this.
+    ///
+    /// Gated on `.background` rather than `!= .active` deliberately: `.inactive` is also when iOS takes the
+    /// app-switcher snapshot, and blanking the log there would be visible for no benefit. The kill needs
+    /// sustained non-frontmost CPU, which is `.background`.
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(CardAppearancePrefs.opacityKey) private var cardOpacityPercent = CardAppearancePrefs.defaultPercent
     private var cardOpacity: Double { max(0, min(1, Double(cardOpacityPercent) / 100)) }
 
@@ -1268,24 +1292,11 @@ private struct LiveLogCard: View {
                 Button("Save…") { saveStrapLog() }
                     .buttonStyle(.plain).font(StrandFont.mono).foregroundStyle(StrandPalette.accent)
             }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(Array(live.log.enumerated()), id: \.offset) { idx, line in
-                            Text(line).font(StrandFont.mono)
-                                .foregroundStyle(StrandPalette.textSecondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .id(idx)
-                        }
-                    }
-                }
-                #if os(iOS)
-                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-                #endif
-                .frame(height: 200)
-                .onChangeCompat(of: live.log.count) { _ in
-                    if let last = live.log.indices.last { proxy.scrollTo(last, anchor: .bottom) }
-                }
+            if scenePhase == .background {
+                // Same height so returning to the app does not shift the card's layout.
+                Color.clear.frame(height: 200)
+            } else {
+                logScroller
             }
 
             // Users look on Live first when something's wrong (#507/#509), so link straight into the
@@ -1309,6 +1320,46 @@ private struct LiveLogCard: View {
         .background(NoopPanelSurface(cornerRadius: 22, surfaceOpacity: cardOpacity))
     }
 
+    /// The tail of the log, lazily.
+    ///
+    /// The slice comes from `LiveState.renderedTail`, which snapshots the buffer so a lazily-realized row
+    /// cannot index a trimmed array. Its indices are ABSOLUTE positions in `live.log`, which is what makes
+    /// them usable as identity: BETWEEN trims, appending a line leaves every other row's id alone, so SwiftUI adds one row
+    /// and drops one instead of re-identifying the list. A trim still renumbers, because `Array.removeFirst`
+    /// shifts every element down, but that is once per `LiveState.trimSlack` lines and now touches 200 ids
+    /// rather than rebuilding 5,000 rows.
+    ///
+    /// The old `id: \.offset` over `Array(live.log.enumerated())` paid on every line instead: a fresh
+    /// 5,000-element array allocated per body evaluation, and a non-lazy `VStack` that built every row even
+    /// though the 200pt viewport shows about fifteen.
+    ///
+    /// `scrollTo` still addresses the true last index, which is always inside the tail.
+    private var logScroller: some View {
+        let tail = LiveState.renderedTail(live.log, tailLines: Self.renderedTailLines)
+        return ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(tail.indices, id: \.self) { idx in
+                        Text(tail[idx]).font(StrandFont.mono)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id(idx)
+                    }
+                }
+            }
+            #if os(iOS)
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            #endif
+            .frame(height: 200)
+            // On `logRevision`, not `log.count` (#2547). The revision is monotonic and ticks exactly once per
+            // coalesced publish; the count plateaus while the ring trims, so it can stay equal across an
+            // append and skip a scroll.
+            .onChangeCompat(of: live.logRevision) { _ in
+                if let last = live.log.indices.last { proxy.scrollTo(last, anchor: .bottom) }
+            }
+        }
+    }
+
     // MARK: - Strap-log export (issue #17 — let macOS users share the log for bug reports)
 
     // The strap-log text builder lives on LiveState (`exportableLogText()`) so the macOS Settings
@@ -1318,8 +1369,14 @@ private struct LiveLogCard: View {
     }
 
     private func saveStrapLog() {
-        FileExport.exportText(live.exportableLogText(),
-                              suggestedName: FileExport.timestampedName("noop-strap-log", ext: "txt"))
+        Task {
+            // Settings (#507) and Test Centre fetch these extras before exporting; without them this
+            // site wrote a same-named file silently missing the "Strap & data" + funnel sections, so
+            // which button someone pressed changed what a triager received.
+            let extra = await DebugDataDiagnostics.dynamicLines(repo: model.repo)
+            FileExport.exportText(live.exportableLogText(extraHeaderLines: extra),
+                                  suggestedName: FileExport.timestampedName("noop-strap-log", ext: "txt"))
+        }
     }
 }
 

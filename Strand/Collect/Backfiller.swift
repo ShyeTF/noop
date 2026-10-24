@@ -36,7 +36,7 @@ final class Backfiller {
     /// (parsed frames, deviceClockRef, wallClockRef, sessionOldestUnix?, sessionNewestUnix?) → Streams.
     /// The trailing session-range markers are the strap's GET_DATA_RANGE oldest/newest for THIS sync
     /// (#547 session-relative gate); nil when the range isn't known yet (the absolute-only floor applies).
-    typealias Extractor = ([ParsedFrame], Int, Int, Int?, Int?) -> Streams
+    typealias Extractor = ([ParsedFrame], Int, Int, DeviceFamily, Int?, Int?) -> Streams
 
     private let store: BackfillStoreWriting
     /// Device id offloaded chunks persist under. MUTABLE so a WHOOP↔WHOOP switch
@@ -193,6 +193,18 @@ final class Backfiller {
     /// `begin()` (it's a cross-session high-water mark, not a per-session tally).
     private(set) var lastAckedTrim: UInt32?
 
+    /// #223 (Nutry) — the record window this DRAIN has actually received, so Nutry can show an honest
+    /// "Synchro de la WHOOP : 62 %". The protocol never reveals a total record count, so the only
+    /// honest measure is temporal coverage: the strap offloads from its trim cursor forward, so the
+    /// FIRST record of a drain is the start of the pending window and `drainNewestUnix` is how far the
+    /// drain has got. Nutry divides by the strap-reported newest (GET_DATA_RANGE).
+    ///
+    /// Spans the whole DRAIN, not one session: reset only when `begin` starts a fresh offload
+    /// (`continuedAfterRows == false`), so the auto-continue chain (#364) keeps one window and the
+    /// percentage climbs smoothly across its slices instead of restarting at each one.
+    private(set) var drainOldestUnix: Int?
+    private(set) var drainNewestUnix: Int?
+
     /// Reject frames one connection may hex-dump (#1992). Three chunks worth at the per-chunk cap:
     /// enough distinct records to triangulate field offsets (v25 was mapped from 45, spread over many
     /// logs), while leaving room in a 2000-line rolling buffer for the lines that give the dump context.
@@ -289,8 +301,9 @@ final class Backfiller {
          // The default (prod) Extractor reads the opt-in HR-from-PPG sub-lag interpolation flag (Test Centre →
          // Experimental algorithms) at decode time and threads it into the pure decoder, so the pure package
          // never reaches for UserDefaults. Default OFF = byte-identical to today. Tests inject their own seam.
-         extract: @escaping Extractor = { extractHistoricalStreams($0, deviceClockRef: $1, wallClockRef: $2,
-                                                                    sessionOldestUnix: $3, sessionNewestUnix: $4,
+        extract: @escaping Extractor = { extractHistoricalStreams($0, deviceClockRef: $1, wallClockRef: $2,
+                                                                    family: $3,
+                                                                    sessionOldestUnix: $4, sessionNewestUnix: $5,
                                                                     subLagInterp: PuffinExperiment.ppgHrSubLagInterpEnabled) }) {
         self.store = store
         self.deviceId = deviceId
@@ -354,6 +367,12 @@ final class Backfiller {
         // re-publishes them as soon as the range reply arrives.
         sessionOldestUnix = nil
         sessionNewestUnix = nil
+        // #223 (Nutry): a fresh drain opens a fresh coverage window; an auto-continue slice extends
+        // the one already open (see `drainOldestUnix`).
+        if continuedAfterRows == false {
+            drainOldestUnix = nil
+            drainNewestUnix = nil
+        }
     }
 
     /// Feed one raw BLE frame into the state machine. May trigger async store operations.
@@ -626,7 +645,7 @@ final class Backfiller {
             let extractFn = extract   // keep the injected Extractor seam (tests override it); prod == extractHistoricalStreams
             let d = await Task.detached(priority: .utility) { () -> DecodedChunk in
                 let parsed = frames.map { parseFrame($0, family: fam) }
-                let decoded = extractFn(parsed, dev, wall, oldest, newest)
+                let decoded = extractFn(parsed, dev, wall, fam, oldest, newest)
                 let rejected = rejectedHistoricalRecords(frames, family: fam)
                 return DecodedChunk(parsed: parsed, decoded: decoded, rejected: rejected)
             }.value
@@ -866,8 +885,14 @@ final class Backfiller {
             }
             // Success-side observability (#150): tally what actually persisted so the session can emit
             // "persisted N rows (M with motion) across K night(s)" — the win-rate signal a log never had.
-            let tally = Backfiller.chunkTally(counts: counts, timestamps: decoded.gravity.map(\.ts) + decoded.hr.map(\.ts))
+            let stamps = decoded.gravity.map(\.ts) + decoded.hr.map(\.ts)
+            let tally = Backfiller.chunkTally(counts: counts, timestamps: stamps)
             sessionRowsPersisted += tally.rows
+            // #223 (Nutry): widen this drain's received window with the records that just landed. Read
+            // by `BLEManager.ackHistoricalChunk` a few lines below (the `ackTrim` at the end of this
+            // method), on the same main actor, so the published coverage is never a chunk behind.
+            if let oldest = stamps.min() { drainOldestUnix = min(drainOldestUnix ?? oldest, oldest) }
+            if let newest = stamps.max() { drainNewestUnix = max(drainNewestUnix ?? newest, newest) }
             // #1008/#1118 census accumulation (pre-storage `offered` vs post-key `inserted`).
             sessionRrOffered += rrCensus.intervals
             sessionRrInserted += counts.rr

@@ -492,7 +492,7 @@ struct CompareView: View {
                 }
                 .padding(.vertical, 7)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(s.metric.title), range \(s.metric.format(s.realMin, effortScale: effortScale)) to \(s.metric.format(s.realMax, effortScale: effortScale))")
+                .accessibilityLabel(String(localized: "\(s.metric.title), range \(s.metric.format(s.realMin, effortScale: effortScale)) to \(s.metric.format(s.realMax, effortScale: effortScale))"))
                 if idx < series.count - 1 {
                     Divider().overlay(StrandPalette.hairline)
                 }
@@ -570,7 +570,7 @@ struct CompareView: View {
 
             if pairs.isEmpty {
                 NoopCard {
-                    Text("Not enough overlapping days between these metrics in \(range.phrase). Widen the range.")
+                    Text(String(localized: "Not enough overlapping days between these metrics in \(range.phrase). Widen the range."))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -609,7 +609,7 @@ struct CompareView: View {
                         .foregroundStyle(StrandPalette.textPrimary)
                     Spacer()
                     TrendChip(text: signedR(p.r), color: tint)
-                    Text("r = \(signedR(p.r))")
+                    Text(String(localized: "r = \(signedR(p.r))"))
                         .font(StrandFont.number(18))
                         .foregroundStyle(tint)
                 }
@@ -624,13 +624,13 @@ struct CompareView: View {
                 LiquidTube(frac: min(abs(p.r), 1), tint: tint, height: 8, animated: false)
                     .accessibilityHidden(true)
 
-                Text("\(p.n) overlapping days · \(strengthWord(p.r)) \(directionWord(p.r)) correlation")
+                Text(String(localized: "\(p.n) overlapping days · \(strengthWord(p.r)) \(directionWord(p.r)) correlation"))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(p.a.metric.title) versus \(p.b.metric.title), r equals \(String(format: "%.2f", p.r)), \(p.n) days")
+        .accessibilityLabel(String(localized: "\(p.a.metric.title) versus \(p.b.metric.title), r equals \(String(format: "%.2f", p.r)), \(p.n) days"))
     }
 
     // MARK: - Insight language
@@ -704,7 +704,7 @@ private struct FlowChips: View {
                             .foregroundStyle(StrandPalette.textTertiary)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Remove \(metric.title)")
+                    .accessibilityLabel(String(localized: "Remove \(metric.title)"))
                 }
                 .padding(.horizontal, 11)
                 .padding(.vertical, 8)
@@ -910,6 +910,8 @@ private struct OverlayChart: View {
 
     var body: some View {
         let model = currentModel
+        // Computed once so the marks and their label format agree about which days are shown.
+        let axisDays = ChartAxisDays.spanning(model.plots.map(\.date))
         Chart(model.plots) { p in
             LineMark(
                 x: .value("Date", p.date),
@@ -966,10 +968,14 @@ private struct OverlayChart: View {
                 }
             }
         }
+        // Day-aligned marks, not a requested count. `.automatic(desiredCount:)` picks the stride that
+        // best fits the count, and over a short window (this chart offers W) that stride goes sub-day, so
+        // two marks land in one calendar day and print the same date on top of itself.
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 5)) { _ in
+            AxisMarks(values: axisDays) { _ in
                 AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))
-                AxisValueLabel().foregroundStyle(StrandPalette.textTertiary)
+                AxisValueLabel(format: ChartAxisDays.labelFormat(for: axisDays))
+                    .foregroundStyle(StrandPalette.textTertiary)
                     .font(StrandFont.footnote)
             }
         }

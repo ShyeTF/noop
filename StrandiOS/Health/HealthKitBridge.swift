@@ -1,11 +1,23 @@
 #if os(iOS)
 import Foundation
 import HealthKit
+import WhoopProtocol
 import CoreLocation
 import UIKit
 import WhoopStore
 import StrandAnalytics
 import StrandImport
+
+/// Lecture Santé limitée à l’écran Apple Watch visible. Jamais le pipeline BLE WHOOP.
+struct HealthVisibleReading: Sendable {
+    var heartRate: Int?
+    var heartRateDate: Date?
+    var steps: Int?
+    var activeKcal: Double?
+    var restingHeartRate: Int?
+    var averageHRV: Double?
+    var maxHeartRate: Int?
+}
 
 /// Two-way Apple Health bridge for the iOS app.
 ///
@@ -111,6 +123,7 @@ final class HealthKitBridge: ObservableObject {
         }
         if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { s.insert(sleep) }
         s.insert(HKObjectType.workoutType())
+        s.insert(HKSeriesType.workoutRoute())
         return s
     }
 
@@ -363,6 +376,112 @@ final class HealthKitBridge: ObservableObject {
         await sync(days: 7)
     }
 
+    /// Push des nouveaux échantillons de FC tant que l’écran Apple Watch est visible.
+    /// Distinct des observers horaires : pas de synchro 30 jours, pas d’écriture Santé.
+    private var visibleHeartQuery: HKAnchoredObjectQuery?
+    private var visibleHeartListener: ((Int, Date) -> Void)?
+
+    func beginVisibleHeartUpdates(onSample: @escaping (Int, Date) -> Void) {
+        endVisibleHeartUpdates()
+        visibleHeartListener = onSample
+        refreshAuthIfPreviouslyGranted()
+        guard auth == .authorized,
+              let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return }
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            HKQuery.predicateForSamples(withStart: Date(), end: nil, options: .strictStartDate),
+            Self.notNoopAuthored,
+        ])
+        let query = HKAnchoredObjectQuery(
+            type: type, predicate: predicate, anchor: nil, limit: HKObjectQueryNoLimit
+        ) { [weak self] _, samples, _, _, _ in
+            guard let latest = Self.latestHeartSample(in: samples) else { return }
+            Task { @MainActor in
+                self?.visibleHeartListener?(latest.bpm, latest.date)
+            }
+        }
+        query.updateHandler = { [weak self] _, samples, _, _, _ in
+            guard let latest = Self.latestHeartSample(in: samples) else { return }
+            Task { @MainActor in
+                self?.visibleHeartListener?(latest.bpm, latest.date)
+            }
+        }
+        store.execute(query)
+        visibleHeartQuery = query
+    }
+
+    func endVisibleHeartUpdates() {
+        if let visibleHeartQuery { store.stop(visibleHeartQuery) }
+        visibleHeartQuery = nil
+        visibleHeartListener = nil
+    }
+
+    // Pure read of the newest heart-rate sample. `nonisolated` so HealthKit's query
+    // callbacks — including `HKAnchoredObjectQuery.updateHandler`, which is `@Sendable`
+    // and runs on a background queue — can call it synchronously. The enclosing type is
+    // `@MainActor`, so without this the call is an isolation error and Archive fails.
+    // The helper only reads the samples it is given.
+    nonisolated private static func latestHeartSample(in samples: [HKSample]?) -> (bpm: Int, date: Date)? {
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        guard let sample = (samples ?? []).compactMap({ $0 as? HKQuantitySample }).max(by: { $0.endDate < $1.endDate })
+        else { return nil }
+        let bpm = Int(sample.quantity.doubleValue(for: unit).rounded())
+        guard (30...230).contains(bpm) else { return nil }
+        return (bpm, sample.endDate)
+    }
+
+    /// Lecture courte pour l’écran au premier plan : dernière FC, et agrégats du jour sur demande.
+    func readVisibleMetrics(includeAggregates: Bool) async -> HealthVisibleReading {
+        refreshAuthIfPreviouslyGranted()
+        guard auth == .authorized else { return HealthVisibleReading() }
+        let heart = await latestHeartRateSample()
+        var reading = HealthVisibleReading(heartRate: heart?.bpm, heartRateDate: heart?.date)
+        guard includeAggregates else { return reading }
+        let bpm = HKUnit.count().unitDivided(by: .minute())
+        reading.steps = await todayStatistic(.stepCount, unit: .count(), option: .cumulativeSum).map { Int($0.rounded()) }
+        reading.activeKcal = await todayStatistic(.activeEnergyBurned, unit: .kilocalorie(), option: .cumulativeSum)
+        reading.restingHeartRate = await todayStatistic(.restingHeartRate, unit: bpm, option: .discreteAverage).map { Int($0.rounded()) }
+        reading.averageHRV = await todayStatistic(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), option: .discreteAverage)
+        reading.maxHeartRate = await todayStatistic(.heartRate, unit: bpm, option: .discreteMax).map { Int($0.rounded()) }
+        return reading
+    }
+
+    private func latestHeartRateSample() async -> (bpm: Int, date: Date)? {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return nil }
+        let start = Date().addingTimeInterval(-6 * 60 * 60)
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate),
+            Self.notNoopAuthored,
+        ])
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        return await withCheckedContinuation { cont in
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
+                cont.resume(returning: Self.latestHeartSample(in: samples))
+            }
+            store.execute(query)
+        }
+    }
+
+    private func todayStatistic(
+        _ id: HKQuantityTypeIdentifier, unit: HKUnit, option: HKStatisticsOptions
+    ) async -> Double? {
+        guard let type = HKQuantityType.quantityType(forIdentifier: id) else { return nil }
+        let start = Calendar.current.startOfDay(for: Date())
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate),
+            Self.notNoopAuthored,
+        ])
+        return await withCheckedContinuation { cont in
+            let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: option) { _, stats, _ in
+                let quantity: HKQuantity?
+                if option.contains(.cumulativeSum) { quantity = stats?.sumQuantity() }
+                else if option.contains(.discreteMax) { quantity = stats?.maximumQuantity() }
+                else { quantity = stats?.averageQuantity() }
+                cont.resume(returning: quantity?.doubleValue(for: unit))
+            }
+            store.execute(query)
+        }
+    }
+
     /// Drive an incremental sync off an observer wake. We use an `HKAnchoredObjectQuery` per type to
     /// learn the span of days touched since we last looked (persisting the anchor so the same samples
     /// aren't walked twice and nothing between wakes is missed), then re-aggregate just that day window
@@ -493,54 +612,87 @@ final class HealthKitBridge: ObservableObject {
 
         var byDay: [String: DayAgg] = [:]
         func agg(_ day: String) -> DayAgg { byDay[day] ?? DayAgg() }
+        // #2561 follow-up: every aggregate below feeds an upsert that writes `column = excluded.column`,
+        // so a nil from a FAILED read replaces a stored value instead of recording an absence. Each read
+        // records its own outcome here and the whole write is held back if any of them failed, because a
+        // partial write cannot say which columns it is entitled to overwrite.
+        var failedReads: [String] = []
+        func note(_ outcome: HealthRead, _ label: String) {
+            if outcome == .failed { failedReads.append(label) }
+        }
 
         // Quantity aggregates per day.
-        await collect(.restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), start: start, end: end, op: .discreteAverage) { day, v in
+        let restingHeartRateRead = await collect(.restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), start: start, end: end, op: .discreteAverage) { day, v in
             var a = agg(day); a.restingHr = v; byDay[day] = a
         }
-        await collect(.heartRate, unit: HKUnit.count().unitDivided(by: .minute()), start: start, end: end, op: .discreteAverage) { day, v in
+        note(restingHeartRateRead, "restingHeartRate")
+        let heartRateAvgRead = await collect(.heartRate, unit: HKUnit.count().unitDivided(by: .minute()), start: start, end: end, op: .discreteAverage) { day, v in
             var a = agg(day); a.avgHr = v; byDay[day] = a
         }
-        await collect(.heartRate, unit: HKUnit.count().unitDivided(by: .minute()), start: start, end: end, op: .discreteMax) { day, v in
+        note(heartRateAvgRead, "heartRateAvg")
+        let heartRateMaxRead = await collect(.heartRate, unit: HKUnit.count().unitDivided(by: .minute()), start: start, end: end, op: .discreteMax) { day, v in
             var a = agg(day); a.maxHr = v; byDay[day] = a
         }
-        await collect(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), start: start, end: end, op: .discreteAverage) { day, v in
+        note(heartRateMaxRead, "heartRateMax")
+        let heartRateVariabilitySDNNRead = await collect(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), start: start, end: end, op: .discreteAverage) { day, v in
             var a = agg(day); a.hrv = v; byDay[day] = a
         }
-        await collect(.oxygenSaturation, unit: .percent(), start: start, end: end, op: .discreteAverage) { day, v in
+        note(heartRateVariabilitySDNNRead, "heartRateVariabilitySDNN")
+        let oxygenSaturationRead = await collect(.oxygenSaturation, unit: .percent(), start: start, end: end, op: .discreteAverage) { day, v in
             var a = agg(day); a.spo2 = v * 100; byDay[day] = a   // 0…1 → percent
         }
-        await collect(.respiratoryRate, unit: HKUnit.count().unitDivided(by: .minute()), start: start, end: end, op: .discreteAverage) { day, v in
+        note(oxygenSaturationRead, "oxygenSaturation")
+        let respiratoryRateRead = await collect(.respiratoryRate, unit: HKUnit.count().unitDivided(by: .minute()), start: start, end: end, op: .discreteAverage) { day, v in
             var a = agg(day); a.respRate = v; byDay[day] = a
         }
-        await collect(.stepCount, unit: .count(), start: start, end: end, op: .cumulativeSum) { day, v in
+        note(respiratoryRateRead, "respiratoryRate")
+        let stepsReadOk = await collect(.stepCount, unit: .count(), start: start, end: end, op: .cumulativeSum) { day, v in
             var a = agg(day); a.steps = v; byDay[day] = a
         }
-        await collect(.activeEnergyBurned, unit: .kilocalorie(), start: start, end: end, op: .cumulativeSum) { day, v in
+        // Steps is in the ledger as well as behind its own guard below. The guard returns first and so
+        // wins the message, but recording it here is what keeps steps covered if that early return is
+        // ever removed: the general guard then catches it instead of it silently losing its protection.
+        note(stepsReadOk, "stepCount")
+        // A failed query is not an empty step history. Stop before upserting AppleDaily: its conflict
+        // update replaces the stored count with nil when another Health metric populated that day.
+        // The next foreground or observer sync can retry without losing the last good reading.
+        guard stepsReadOk != .failed else {
+            lastSyncDays = 0
+            lastError = String(localized: "Apple Health sync failed: \(String(localized: "Steps"))")
+            return false
+        }
+        let activeEnergyBurnedRead = await collect(.activeEnergyBurned, unit: .kilocalorie(), start: start, end: end, op: .cumulativeSum) { day, v in
             var a = agg(day); a.activeKcal = v; byDay[day] = a
         }
-        await collect(.basalEnergyBurned, unit: .kilocalorie(), start: start, end: end, op: .cumulativeSum) { day, v in
+        note(activeEnergyBurnedRead, "activeEnergyBurned")
+        let basalEnergyBurnedRead = await collect(.basalEnergyBurned, unit: .kilocalorie(), start: start, end: end, op: .cumulativeSum) { day, v in
             var a = agg(day); a.basalKcal = v; byDay[day] = a
         }
-        await collect(.vo2Max, unit: HKUnit(from: "ml/kg*min"), start: start, end: end, op: .discreteAverage) { day, v in
+        note(basalEnergyBurnedRead, "basalEnergyBurned")
+        let vo2MaxRead = await collect(.vo2Max, unit: HKUnit(from: "ml/kg*min"), start: start, end: end, op: .discreteAverage) { day, v in
             var a = agg(day); a.vo2max = v; byDay[day] = a
         }
+        note(vo2MaxRead, "vo2Max")
 
         // Body composition — READ-ONLY import under the apple-health source (#20). Weight, lean mass
         // and BMI are point-in-time readings, so take the latest-of-day; body-fat reads fine as a
         // daily average. Body-fat HealthKit gives a 0…1 fraction, scaled to percent like spo2 above.
-        await collect(.bodyMass, unit: .gramUnit(with: .kilo), start: start, end: end, op: .discreteMostRecent) { day, v in
+        let bodyMassRead = await collect(.bodyMass, unit: .gramUnit(with: .kilo), start: start, end: end, op: .discreteMostRecent) { day, v in
             var a = agg(day); a.weightKg = v; byDay[day] = a
         }
-        await collect(.bodyFatPercentage, unit: .percent(), start: start, end: end, op: .discreteAverage) { day, v in
+        note(bodyMassRead, "bodyMass")
+        let bodyFatPercentageRead = await collect(.bodyFatPercentage, unit: .percent(), start: start, end: end, op: .discreteAverage) { day, v in
             var a = agg(day); a.bodyFatPct = v * 100; byDay[day] = a   // 0…1 → percent
         }
-        await collect(.leanBodyMass, unit: .gramUnit(with: .kilo), start: start, end: end, op: .discreteMostRecent) { day, v in
+        note(bodyFatPercentageRead, "bodyFatPercentage")
+        let leanBodyMassRead = await collect(.leanBodyMass, unit: .gramUnit(with: .kilo), start: start, end: end, op: .discreteMostRecent) { day, v in
             var a = agg(day); a.leanMassKg = v; byDay[day] = a
         }
-        await collect(.bodyMassIndex, unit: .count(), start: start, end: end, op: .discreteMostRecent) { day, v in
+        note(leanBodyMassRead, "leanBodyMass")
+        let bodyMassIndexRead = await collect(.bodyMassIndex, unit: .count(), start: start, end: end, op: .discreteMostRecent) { day, v in
             var a = agg(day); a.bmi = v; byDay[day] = a
         }
+        note(bodyMassIndexRead, "bodyMassIndex")
 
         // Water logged in other apps (#949). A cumulative day SUM, like steps — HealthKit re-adds every
         // sample in the day on each sync, so the figure this produces is a full replacement rather than a
@@ -559,6 +711,21 @@ final class HealthKitBridge: ObservableObject {
             var a = agg(day)
             a.asleepMin = asleepMin; a.deepMin = deepMin; a.remMin = remMin; a.coreMin = coreMin
             byDay[day] = a
+        }
+
+        // #2561 follow-up: hold the whole write back if ANY aggregate read failed. Every upsert below
+        // assigns `column = excluded.column`, so writing now would replace each failed metric's stored
+        // value with the nil standing in for it. Steps had this guard already; the rest did not, and the
+        // clobber is identical for activeKcal, basalKcal, vo2max, avgHr, maxHr and weightKg.
+        //
+        // The whole pass is held rather than the failed columns dropped, because these rows are built
+        // from one `byDay` and the upserts take whole rows: there is no way to say "leave that column
+        // alone" without a per-column mask the store does not have. A held pass loses nothing, since the
+        // next foreground or observer sync re-reads the same window.
+        guard failedReads.isEmpty else {
+            lastSyncDays = 0
+            lastError = String(localized: "Apple Health sync failed: \(failedReads.joined(separator: ", "))")
+            return false
         }
 
         // Build + upsert the store rows under the apple-health source.
@@ -634,7 +801,7 @@ final class HealthKitBridge: ObservableObject {
             // Gated on the hydration toggle, which is opt-in and default OFF: an import must not quietly
             // populate a feature the user has turned off, and skipping it avoids writing a window of rows
             // nothing will read.
-            if waterReadOk, UserDefaults.standard.bool(forKey: HydrationStore.enabledKey) {
+            if waterReadOk == .read, UserDefaults.standard.bool(forKey: HydrationStore.enabledKey) {
                 var waterByDay: [String: Double] = [:]
                 var cursor = cal.startOfDay(for: start)
                 while cursor <= end {
@@ -940,6 +1107,14 @@ final class HealthKitBridge: ObservableObject {
             )
             candidates.append(Candidate(type: type, key: key, sample: sample))
         }
+        // Keys of OUR earlier samples to delete with no replacement: a value this build no longer writes
+        // must not survive from a build that did.
+        var retracted: [HKQuantityType: [String]] = [:]
+        func retract(_ id: HKQuantityTypeIdentifier, _ day: String) {
+            guard let type = HKQuantityType.quantityType(forIdentifier: id),
+                  store.authorizationStatus(for: type) == .sharingAuthorized else { return }
+            retracted[type, default: []].append(HealthWriteback.appleHealthVitalKey(metricId: id.rawValue, day: day))
+        }
 
         for row in rows {
             guard let date = HealthKitBridge.date(from: row.day) else { continue }
@@ -948,16 +1123,21 @@ final class HealthKitBridge: ObservableObject {
             if let rhr = row.restingHr {
                 add(.restingHeartRate, HKUnit.count().unitDivided(by: .minute()), Double(rhr), row.day, at)
             }
-            // Export the GENUINE SDNN (v31) when present — the strap's `avgHrv` is RMSSD, which HealthKit
-            // has no field for, so writing it under `.heartRateVariabilitySDNN` mislabels it. `avgSdnn` is the
-            // 5-min SDNN index, deliberately window-matched to Apple's own short-window SDNN samples so the
-            // written values sit consistently in the user's Health SDNN history (a whole-night SD would land
-            // 2-3× high). WHOOP rows backfill `avgSdnn` from stored raw R-R on the next re-score; Apple rows'
-            // `avgHrv` already IS SDNN. The `avgHrv` fallback fires for those two before re-scoring, and
-            // permanently for summary-only sources (Oura) that give RMSSD with no raw R-R to derive SDNN from
-            // — HealthKit's single HRV type leaves no better label there.
-            if let sdnn = row.avgSdnn ?? row.avgHrv {
+            // Export only the GENUINE SDNN (v31). `avgSdnn` is the 5-min SDNN index, deliberately
+            // window-matched to Apple's own short-window SDNN samples so the written values sit consistently
+            // in the user's Health SDNN history (a whole-night SD would land 2-3× high).
+            //
+            // No `avgHrv` fallback (#2264). Every row here is a strap-computed or WHOOP-imported daily (rows
+            // imported FROM Apple Health live under `appleDeviceId` and are never read back out), so `avgHrv` is always
+            // RMSSD — a different magnitude that HealthKit has no type for. Writing it under
+            // `.heartRateVariabilitySDNN` put a step into the series that no physiology produced, and a
+            // Health reader that scores off SDNN took it at face value. A night without an SDNN (not yet
+            // re-scored from raw R-R, or a summary-only source such as Oura) exports no HRV instead, and any
+            // mislabelled sample an earlier build wrote for that day is retracted.
+            if let sdnn = row.avgSdnn {
                 add(.heartRateVariabilitySDNN, .secondUnit(with: .milli), sdnn, row.day, at)
+            } else {
+                retract(.heartRateVariabilitySDNN, row.day)
             }
             if let spo2 = row.spo2Pct {
                 add(.oxygenSaturation, .percent(), spo2 / 100, row.day, at)
@@ -966,21 +1146,23 @@ final class HealthKitBridge: ObservableObject {
                 add(.respiratoryRate, HKUnit.count().unitDivided(by: .minute()), rr, row.day, at)
             }
         }
-        guard !candidates.isEmpty else { return }
+        guard !candidates.isEmpty || !retracted.isEmpty else { return }
 
         // Delete any of OUR prior samples that carry the same metadata keys, then write the fresh
         // batch. Scoped to HKSource.default() so we never touch a sample written by another app
         // that happens to use the same external UUID. Delete failures are non-fatal (e.g., nothing
         // to delete on first run) — only the save throws.
         let bySource = HKQuery.predicateForObjects(from: HKSource.default())
-        let grouped = Dictionary(grouping: candidates, by: { $0.type })
-        for (type, items) in grouped {
-            let keys = Array(Set(items.map { $0.key }))
+        var keysByType = Dictionary(grouping: candidates, by: { $0.type }).mapValues { $0.map { $0.key } }
+        for (type, keys) in retracted { keysByType[type, default: []] += keys }
+        for (type, allKeys) in keysByType {
+            let keys = Array(Set(allKeys))
             let byKey = HKQuery.predicateForObjects(withMetadataKey: HKMetadataKeyExternalUUID,
                                                     allowedValues: keys)
             let pred = NSCompoundPredicate(andPredicateWithSubpredicates: [bySource, byKey])
             _ = try? await self.store.deleteObjects(of: type, predicate: pred)
         }
+        guard !candidates.isEmpty else { return }
         try await self.store.save(candidates.map { $0.sample })
     }
 
@@ -1254,7 +1436,34 @@ final class HealthKitBridge: ObservableObject {
                 }
                 if !extras.isEmpty { try await builder.addSamples(extras) }
                 try await builder.endCollection(at: end)
-                _ = try await builder.finishWorkout()
+                let workout = try await builder.finishWorkout()
+
+                // #2340: workout route write-back. Load the encoded polyline and its original point
+                // measurements from the Apple-only side-store and attach them to the finished workout.
+                // We only do this if the workout type supports a distance (GPS) route.
+                if let workout,
+                   Self.distanceTypeId(forSport: row.sport) != nil,
+                   store.authorizationStatus(for: HKSeriesType.workoutRoute()) == .sharingAuthorized,
+                   let route = RouteStore.loadWithPoints(startTs: row.startTs, sport: row.sport),
+                   !route.polyline.isEmpty,
+                   route.hasExportableMeasurements,
+                   let points = route.points {
+                    let routeBuilder = HKWorkoutRouteBuilder(healthStore: store, device: .local())
+                    do {
+                        let locs = points.map { point in
+                            CLLocation(coordinate: CLLocationCoordinate2D(latitude: point.lat, longitude: point.lon),
+                                       altitude: 0, horizontalAccuracy: point.accuracyM, verticalAccuracy: -1,
+                                       timestamp: Date(timeIntervalSince1970: Double(point.tMs) / 1000))
+                        }
+                        try await routeBuilder.insertRouteData(locs)
+                        try await routeBuilder.finishRoute(with: workout, metadata: nil)
+                    } catch {
+                        // Route is optional enrichment. Discard its uncommitted series and retain the workout.
+                        routeBuilder.discard()
+                        // HealthKit route attachment failures are intentionally silent: writeBack's
+                        // lastError describes workout/sync failures, while this enrichment can safely be retried.
+                    }
+                }
             } catch {
                 builder.discardWorkout()
                 throw error
@@ -1383,24 +1592,42 @@ final class HealthKitBridge: ObservableObject {
         }
     }
 
+    /// What one HealthKit aggregate read is worth to a caller that will WRITE the result.
+    ///
+    /// `appleDaily`, `dailyMetric` and `metricSeries` all upsert with `column = excluded.column`, so a
+    /// nil carried into a write REPLACES a stored value. A nil that came from a failed query therefore
+    /// erases a good reading rather than recording an absence, which is #2561.
+    ///
+    /// `unavailable` is deliberately NOT a failure. A quantity type this device does not have will never
+    /// have one, so absence IS the true answer and writing it is correct. Folding the two together would
+    /// let one missing type abort every Health sync forever on that device.
+    enum HealthRead {
+        /// The query ran. Whatever it found, including nothing, is authoritative.
+        case read
+        /// The quantity type does not exist on this device. Nothing to read, now or later.
+        case unavailable
+        /// The query failed. The result says nothing about the metric and must not be written.
+        case failed
+    }
+
     private func collect(_ id: HKQuantityTypeIdentifier, unit: HKUnit, start: Date, end: Date,
-                         op: HKStatisticsOptions, sink: @escaping (String, Double) -> Void) async -> Bool {
-        guard let type = HKQuantityType.quantityType(forIdentifier: id) else { return false }
+                         op: HKStatisticsOptions, sink: @escaping (String, Double) -> Void) async -> HealthRead {
+        guard let type = HKQuantityType.quantityType(forIdentifier: id) else { return .unavailable }
         let cal = Calendar.current
         let anchor = cal.startOfDay(for: start)
         let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
             HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate),
             Self.notNoopAuthored,
         ])
-        return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+        return await withCheckedContinuation { (cont: CheckedContinuation<HealthRead, Never>) in
             let q = HKStatisticsCollectionQuery(quantityType: type, quantitySamplePredicate: predicate,
                                                 options: op, anchorDate: anchor,
                                                 intervalComponents: DateComponents(day: 1))
             q.initialResultsHandler = { _, results, error in
-                // A nil `results` with an error is a FAILED read, not an empty one — see the note on
-                // the return value. Both are reported as false so the caller can tell them apart from
-                // a query that genuinely found nothing.
-                guard error == nil, let results else { cont.resume(returning: false); return }
+                // A nil `results` with an error is a FAILED read, not an empty one: it says nothing
+                // about the metric, so a caller that writes must not write it. A query that RAN and
+                // found nothing resumes `.read`, because absence is then a real answer.
+                guard error == nil, let results else { cont.resume(returning: .failed); return }
                 results.enumerateStatistics(from: start, to: end) { stats, _ in
                     let q: HKQuantity?
                     switch op {
@@ -1412,7 +1639,7 @@ final class HealthKitBridge: ObservableObject {
                     }
                     if let q { sink(HealthKitBridge.dayString(stats.startDate), q.doubleValue(for: unit)) }
                 }
-                cont.resume(returning: true)
+                cont.resume(returning: .read)
             }
             store.execute(q)
         }
@@ -1520,30 +1747,11 @@ final class HealthKitBridge: ObservableObject {
         // with each workout; they cannot be read inside the sample query's completion handler
         // (HealthKit does not allow nested queries on the same store), so we hold the workouts and
         // fetch routes in a second pass below.
-        let workoutsAndRows: [(HKWorkout, WorkoutRow)] = await withCheckedContinuation { (cont: CheckedContinuation<[(HKWorkout, WorkoutRow)], Never>) in
+        let workoutsAndRows: [HKWorkout] = await withCheckedContinuation { (cont: CheckedContinuation<[HKWorkout], Never>) in
             let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
             let q = HKSampleQuery(sampleType: HKObjectType.workoutType(), predicate: predicate,
                                   limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, _ in
-                var pairs: [(HKWorkout, WorkoutRow)] = []
-                for case let workout as HKWorkout in samples ?? [] {
-                    let startTs = Int(workout.startDate.timeIntervalSince1970)
-                    let endTs = max(Int(workout.endDate.timeIntervalSince1970), startTs)
-                    let duration = workout.duration > 0 ? workout.duration : Double(endTs - startTs)
-                    pairs.append((workout, WorkoutRow(
-                        startTs: startTs,
-                        endTs: endTs,
-                        sport: Self.sportName(workout.workoutActivityType),
-                        source: HealthKitBridge.appleWorkoutSource,
-                        durationS: duration,
-                        energyKcal: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
-                        avgHr: nil,
-                        maxHr: nil,
-                        strain: nil,
-                        distanceM: workout.totalDistance?.doubleValue(for: .meter()),
-                        zonesJSON: nil,
-                        notes: nil, steps: nil)))
-                }
-                cont.resume(returning: pairs)
+                cont.resume(returning: (samples ?? []).compactMap { $0 as? HKWorkout })
             }
             store.execute(q)
         }
@@ -1556,25 +1764,159 @@ final class HealthKitBridge: ObservableObject {
         // 500-workout first import would decode and re-encode a 400-entry map 500 times, on the order of
         // a gigabyte of JSON through UserDefaults. `storeAll` applies the same eviction, once.
         var importedRoutes: [(route: WorkoutRoute, startTs: Int, sport: String)] = []
-        for (workout, row) in workoutsAndRows {
+        for workout in workoutsAndRows {
             if let route = await Self.fetchWorkoutRoute(for: workout, store: store),
                route.count >= 2 {
-                let polyline = RouteMath.encode(route)
-                let distanceM = RouteMath.totalMeters(route)
-                importedRoutes.append((WorkoutRoute(polyline: polyline, distanceM: distanceM),
-                                       row.startTs, row.sport))
+                let latLngs = route.map { RouteMath.LatLng($0.lat, $0.lon) }
+                let polyline = RouteMath.encode(latLngs)
+                let distanceM = RouteMath.totalMeters(latLngs)
+                importedRoutes.append((WorkoutRoute(polyline: polyline, distanceM: distanceM, points: route),
+                                       Int(workout.startDate.timeIntervalSince1970),
+                                       Self.sportName(workout.workoutActivityType)))
             }
         }
         RouteStore.storeAll(importedRoutes)
-        return workoutsAndRows.map { $0.1 }
+        let profile = repo.strainProfile
+        var rows: [WorkoutRow] = []
+        rows.reserveCapacity(workoutsAndRows.count)
+        for workout in workoutsAndRows {
+            let startTs = Int(workout.startDate.timeIntervalSince1970)
+            let endTs = max(Int(workout.endDate.timeIntervalSince1970), startTs)
+            let appleSamples = await Self.fetchWorkoutHeartRate(for: workout, store: store)
+            let steps = await Self.fetchWorkoutSteps(for: workout, store: store)
+            // Prefer the HR stream HealthKit associates with this workout (for example, Apple Watch).
+            // If that stream is absent or too sparse to score, fall back to the locally stored strap
+            // trace for this exact workout window — the same trace that backs the detail chart.
+            //
+            // ONE stream answers the whole row. The streams are never merged, which would double-count
+            // overlapping beats, and they are never split across fields either: a mean from the watch
+            // beside an Effort integrated from the strap are two readings of one session that a wearer
+            // cannot reconcile, and with no watch beats at all it would print an Effort with no heart
+            // rate to account for it. So when the fallback is what scores the session, it reports that
+            // session's mean and peak too.
+            var samples = appleSamples
+            var effort = profile.flatMap { Self.scoredEffort(appleSamples, profile: $0) }
+            if effort == nil, let profile {
+                let hrDeviceIds = Repository.workoutHrDeviceIds(
+                    source: Self.appleWorkoutSource,
+                    activeStrapId: repo.deviceId,
+                    importedIds: repo.importedReadIds)
+                let strapSamples = await repo.hrSamples(deviceIds: hrDeviceIds,
+                                                        from: startTs, to: endTs,
+                                                        limit: 20_000)
+                if let strapEffort = Self.scoredEffort(strapSamples, profile: profile) {
+                    effort = strapEffort
+                    samples = strapSamples
+                }
+            }
+            // Two gates, not one. A mean and a peak are readable from any beat the answering stream
+            // carries, so they are reported whenever there are samples, which is what `WorkoutSource`
+            // already does for a merged workout (`hrWeight > 0 ? … : nil`, no sample floor) rather than a
+            // threshold invented here. EFFORT is the number that needs coverage: it integrates time in
+            // zones, and a handful of beats over a few minutes would score a session never measured.
+            //
+            // Sharing one threshold meant a 15-sample, 8-minute workout with perfectly good heart rate
+            // showed blank Avg and Max as well as blank Effort. It also meant a wearer with NO strain
+            // profile got no heart rate at all from an import, because the old guard opened on
+            // `guard let profile`: avg and max never needed one. Both still hold: when neither stream can
+            // score an Effort, the watch's beats still answer the mean and peak.
+            let heartRate: (avg: Int, peak: Int)? = {
+                guard !samples.isEmpty else { return nil }
+                let mean = Int((Double(samples.reduce(0) { $0 + $1.bpm }) / Double(samples.count)).rounded())
+                return (mean, samples.map(\.bpm).max() ?? mean)
+            }()
+            rows.append(WorkoutRow(
+                startTs: startTs, endTs: endTs,
+                sport: Self.sportName(workout.workoutActivityType),
+                source: HealthKitBridge.appleWorkoutSource,
+                durationS: workout.duration > 0 ? workout.duration : Double(endTs - startTs),
+                energyKcal: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
+                avgHr: heartRate?.avg, maxHr: heartRate?.peak, strain: effort,
+                distanceM: workout.totalDistance?.doubleValue(for: .meter()),
+                zonesJSON: nil, notes: nil, steps: steps))
+        }
+        return rows
     }
 
-    /// #1205: fetch the GPS route (list of `RouteMath.LatLng`) for a single `HKWorkout`.
+    /// Beats an imported workout must carry before its EFFORT is scored.
+    ///
+    /// Effort integrates time in heart-rate zones, so it needs a session actually measured rather than a
+    /// few beats sampled from one. Avg and Max deliberately do NOT sit behind this: they are honest at
+    /// any sample count, and gating them here left workouts blank that HealthKit could answer.
+    private static let effortMinimumSamples = 20
+
+    /// Seconds an imported workout's beats must span before its EFFORT is scored. See
+    /// [effortMinimumSamples]; twenty beats crowded into a minute is not ten minutes of measurement.
+    private static let effortMinimumSpanSeconds = 600
+
+    /// Score a workout only when its source stream has enough independent coverage to represent the
+    /// session. Used first for HealthKit-associated HR and then for the WHOOP fallback; source samples
+    /// are intentionally never combined.
+    private static func scoredEffort(_ samples: [HRSample],
+                                     profile: Repository.StrainProfile) -> Double? {
+        guard let first = samples.first, let last = samples.last,
+              samples.count >= effortMinimumSamples,
+              last.ts - first.ts >= effortMinimumSpanSeconds else { return nil }
+        return StrainScorer.strain(samples, maxHR: profile.hrMax,
+                                   method: PuffinExperiment.effortMethod,
+                                   sex: profile.sex)
+    }
+
+    /// HealthKit has no direct step-count property on HKWorkout; query step samples for its time window.
+    /// Return nil on query failure or no usable samples, preserving "unknown" rather than reporting zero.
+    nonisolated private static func fetchWorkoutSteps(for workout: HKWorkout,
+                                                       store: HKHealthStore) async -> Int? {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: workout.startDate, end: workout.endDate,
+                                                     options: .strictStartDate)
+        return await withCheckedContinuation { (cont: CheckedContinuation<Int?, Never>) in
+            let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate,
+                                          options: .cumulativeSum) { _, statistics, error in
+                guard error == nil,
+                      let total = statistics?.sumQuantity()?.doubleValue(for: .count()),
+                      total.isFinite, total >= 0 else {
+                    cont.resume(returning: nil); return
+                }
+                cont.resume(returning: Int(total.rounded()))
+            }
+            store.execute(query)
+        }
+    }
+
+    /// Read only HR samples associated with this HealthKit workout, excluding samples authored by NOOP.
+    /// The workout association prevents same-window samples from unrelated sessions being counted.
+    private static func fetchWorkoutHeartRate(for workout: HKWorkout,
+                                               store: HKHealthStore) async -> [HRSample] {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return [] }
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            HKQuery.predicateForObjects(from: workout),
+            Self.notNoopAuthored,
+        ])
+        return await withCheckedContinuation { (cont: CheckedContinuation<[HRSample], Never>) in
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+            let query = HKSampleQuery(sampleType: type, predicate: predicate,
+                                      limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, error in
+                guard error == nil, let samples = samples as? [HKQuantitySample] else {
+                    cont.resume(returning: []); return
+                }
+                let unit = HKUnit.count().unitDivided(by: .minute())
+                let result = samples.compactMap { sample -> HRSample? in
+                    let bpm = sample.quantity.doubleValue(for: unit)
+                    guard bpm.isFinite, bpm >= 25, bpm <= 240 else { return nil }
+                    return HRSample(ts: Int(sample.startDate.timeIntervalSince1970), bpm: Int(bpm.rounded()))
+                }
+                cont.resume(returning: result)
+            }
+            store.execute(query)
+        }
+    }
+
+    /// #1205: fetch the GPS route and its original timing/accuracy for a single `HKWorkout`.
     /// Queries `HKWorkoutRoute` samples overlapping the workout's time range, then collects all
     /// `CLLocation` waypoints from each route via `HKWorkoutRouteQuery`. Returns `nil` when there
     /// is no route, the user has not granted route read access, or HealthKit reports an error —
     /// all of which are graceful skips (the workout imports without a map, same as today).
-    nonisolated static func fetchWorkoutRoute(for workout: HKWorkout, store: HKHealthStore) async -> [RouteMath.LatLng]? {
+    nonisolated static func fetchWorkoutRoute(for workout: HKWorkout, store: HKHealthStore) async -> [WorkoutRoutePoint]? {
         let routeType = HKSeriesType.workoutRoute()
         let predicate = HKQuery.predicateForSamples(withStart: workout.startDate, end: workout.endDate, options: .strictStartDate)
         // First: query for HKWorkoutRoute samples associated with this workout.
@@ -1589,12 +1931,15 @@ final class HealthKitBridge: ObservableObject {
         guard !routes.isEmpty else { return nil }
         // Second: collect CLLocation waypoints from each route. HKWorkoutRouteQuery calls its
         // handler repeatedly with batches of locations; `done: true` marks the end of one route.
-        var points: [RouteMath.LatLng] = []
+        var points: [WorkoutRoutePoint] = []
         for route in routes {
             await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
                 let query = HKWorkoutRouteQuery(route: route) { _, locations, done, _ in
                     for loc in locations ?? [] {
-                        points.append(RouteMath.LatLng(loc.coordinate.latitude, loc.coordinate.longitude))
+                        points.append(WorkoutRoutePoint(lat: loc.coordinate.latitude,
+                                                        lon: loc.coordinate.longitude,
+                                                        accuracyM: loc.horizontalAccuracy,
+                                                        tMs: Int64(loc.timestamp.timeIntervalSince1970 * 1000)))
                     }
                     if done { cont.resume(returning: ()) }
                 }

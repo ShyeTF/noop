@@ -146,8 +146,6 @@ struct WeeklyDigestContent: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     #endif
 
-    /// Display order: the two daily scores first, then the nightly signals.
-    private static let order: [WeeklyMetric] = [.charge, .effort, .rest, .hrv, .rhr]
     /// The three headline 0–100 scores shown as domain summaries.
     private static let scoreOrder: [WeeklyMetric] = [.charge, .effort, .rest]
 
@@ -192,10 +190,10 @@ struct WeeklyDigestContent: View {
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
                 Spacer()
-                Text("\(digest.daysWithData)/7 days")
+                Text(String(localized: "\(digest.daysWithData)/7 days"))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textSecondary)
-                    .accessibilityLabel("\(digest.daysWithData) of 7 days had data this week")
+                    .accessibilityLabel(String(localized: "\(digest.daysWithData) of 7 days had data this week"))
             }
             .padding(NoopMetrics.cardPadding)
         }
@@ -388,7 +386,7 @@ struct WeeklyDigestContent: View {
         VStack(alignment: .leading, spacing: 6) {
             Divider().overlay(StrandPalette.hairline)
             if let sd = digest.sleepConsistencySD {
-                Text("Sleep steadiness: Rest varied ±\(fmt1(sd)) pts night to night.")
+                Text(String(localized: "Sleep steadiness: Rest varied ±\(fmt1(sd)) pts night to night."))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }

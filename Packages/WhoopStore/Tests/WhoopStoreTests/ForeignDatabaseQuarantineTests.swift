@@ -2,10 +2,8 @@ import XCTest
 import GRDB
 @testable import WhoopStore
 
-/// #222: a foreign (Android/Room) database dropped over ours by a bad cross-platform restore has our
-/// table names but NO `grdb_migrations` bookkeeping, so the migrator re-runs v1 and crashes forever
-/// with `table "device" already exists`. WhoopStore.init must quarantine such a file and open fresh,
-/// while leaving a valid GRDB backup untouched.
+/// A foreign database must not be deleted or replaced. Opening it fails the migrator; Nutry keeps the
+/// original, copies it to `.bak-<date>`, and serves an empty in-memory store for this launch.
 final class ForeignDatabaseQuarantineTests: XCTestCase {
 
     private func tempPath() -> String {
@@ -29,33 +27,38 @@ final class ForeignDatabaseQuarantineTests: XCTestCase {
         }
     }
 
-    func testForeignDatabaseIsQuarantinedAndStoreOpensFresh() async throws {
+    func testForeignDatabaseIsKeptAndStoreFallsBackToMemory() async throws {
         let path = tempPath()
         defer { cleanup(path) }
 
-        // Simulate the foreign DB: our table names + a row, but NO grdb_migrations bookkeeping.
         let raw = try DatabaseQueue(path: path)
         try await raw.write { db in
             try db.execute(sql: "CREATE TABLE device (id TEXT PRIMARY KEY, mac TEXT, name TEXT, firstSeen INTEGER, lastSeen INTEGER)")
             try db.execute(sql: "CREATE TABLE hrSample (deviceId TEXT, ts INTEGER, bpm INTEGER)")
             try db.execute(sql: "INSERT INTO device (id, name) VALUES ('foreign', 'WHOOP')")
         }
-        // Release the probe handle before opening the store.
         _ = raw
         XCTAssertFalse(try tableNames(at: path).contains("grdb_migrations"),
                        "precondition: a foreign DB has no grdb_migrations")
 
-        // Opening must NOT throw `table "device" already exists` — it quarantines + starts fresh.
         let store = try await WhoopStore(path: path)
         let tables = try await store.tableNames()
-        XCTAssertTrue(tables.contains("grdb_migrations"), "fresh store ran its migrations")
-        XCTAssertTrue(tables.contains("device"))
+        XCTAssertTrue(tables.contains("grdb_migrations"), "safe mode still migrates an empty memory store")
+
+        let onDisk = try tableNames(at: path)
+        XCTAssertFalse(onDisk.contains("grdb_migrations"), "the original file was not migrated in place over the foreign rows")
+        let names = try DatabaseQueue(path: path).read { db in
+            try String.fetchAll(db, sql: "SELECT name FROM device")
+        }
+        XCTAssertEqual(names, ["WHOOP"])
 
         let dir = (path as NSString).deletingLastPathComponent
         let base = (path as NSString).lastPathComponent
         let siblings = try FileManager.default.contentsOfDirectory(atPath: dir)
-        XCTAssertTrue(siblings.contains { $0.hasPrefix(base + ".incompatible-") },
-                      "the foreign DB was quarantined to a .incompatible sidecar")
+        XCTAssertTrue(siblings.contains { $0.hasPrefix(base + ".bak-") },
+                      "a dated copy of the original was written")
+        XCTAssertFalse(siblings.contains { $0.hasPrefix(base + ".incompatible-") },
+                       "the original was not moved aside")
     }
 
     func testValidGrdbBackupIsNotQuarantined() async throws {
@@ -74,7 +77,7 @@ final class ForeignDatabaseQuarantineTests: XCTestCase {
         let dir = (path as NSString).deletingLastPathComponent
         let base = (path as NSString).lastPathComponent
         let siblings = try FileManager.default.contentsOfDirectory(atPath: dir)
-        XCTAssertFalse(siblings.contains { $0.hasPrefix(base + ".incompatible-") },
-                       "a valid GRDB DB must never be quarantined")
+        XCTAssertFalse(siblings.contains { $0.hasPrefix(base + ".bak-") },
+                       "a valid GRDB DB must not be treated as a failed open")
     }
 }

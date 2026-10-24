@@ -27,6 +27,7 @@ struct LiquidTodayView: View {
     // would re-render all of Today every second (the exact churn the LiveState leaves isolate). BLEManager
     // only publishes connect/discovery state, never HR. Injected at the app roots beside .environmentObject(model).
     @EnvironmentObject var ble: BLEManager
+    @Environment(\.nutryWhoopHosted) private var nutryWhoopHosted
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Low Power Mode — and the in-app "Reduce motion in NOOP" toggle — pose the sky still too, the
     /// behaviour the comment on the sky branch below has always described. Neither has a SwiftUI
@@ -87,6 +88,7 @@ struct LiquidTodayView: View {
     // cheap heart-rate fingerprint and memoises, so the widget, this shell and the other Today view all
     // share one computation rather than scoring the day three times.
     @State private var hostedStressHours: [DaytimeStress.HourPoint] = []
+    @State private var hostedStressActivityMaskedHours = 0
 
     // sheets / expanders
     @State private var guideSection: ScoreSection?
@@ -127,6 +129,8 @@ struct LiquidTodayView: View {
     // day navigation (0 = today, 1 = yesterday, …)
     @State private var selectedDayOffset = 0
     @State private var showDayPicker = false
+    @State private var heartRateCardFrame: CGRect = .null
+    private static let daySwipeSpace = "liquidTodayDaySwipeSpace"
 
     // PERF: the body was rescanning repo.days (599 days) ~23× per pass for displayDay and ~3× for
     // readiness on EVERY re-render (every HR notify, every canvas frame that invalidates, every scroll).
@@ -265,13 +269,15 @@ struct LiquidTodayView: View {
             }
         )
     }
-    /// Horizontal swipe between days (left = older, right = newer), clamped to [today, earliest].
+    /// Horizontal swipe between days (right = older, left = newer — `TodayView.daySwipeDelta`, #2378),
+    /// clamped to [today, earliest].
     private var daySwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 24)
+        DragGesture(minimumDistance: 24, coordinateSpace: .named(Self.daySwipeSpace))
             .onEnded { value in
+                guard !heartRateCardFrame.contains(value.startLocation) else { return }
                 let dx = value.translation.width, dy = value.translation.height
                 guard abs(dx) > abs(dy) * 1.5, abs(dx) > 50 else { return }
-                let delta = dx < 0 ? 1 : -1
+                let delta = TodayView.daySwipeDelta(dx: dx)
                 let next = Self.clampedDayOffset(current: selectedDayOffset, delta: delta,
                                                  maxOffset: earliestDayOffset)
                 guard next != selectedDayOffset else { return }
@@ -429,8 +435,10 @@ struct LiquidTodayView: View {
                     .accessibilityHidden(true)
                 }
             }
-            .ignoresSafeArea()
+            .ignoresSafeArea(edges: nutryWhoopHosted ? [.horizontal] : .all)
         }
+        .coordinateSpace(name: Self.daySwipeSpace)
+        .onPreferenceChange(LiquidHeartRateCardFrameKey.self) { heartRateCardFrame = $0 }
         // Swipe left/right to change DAYS (WHOOP-style). Tab-swipe is disabled on Today in RootTabView so
         // this owns the horizontal gesture here.
         .simultaneousGesture(daySwipeGesture)
@@ -556,7 +564,7 @@ struct LiquidTodayView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(dayTitle). Tap to pick a day, swipe to change day.")
+                .accessibilityLabel(String(localized: "\(dayTitle). Tap to pick a day, swipe to change day."))
                 .popover(isPresented: $showDayPicker) {
                     DatePicker("", selection: dayPickerBinding, in: ...Repository.logicalDay(Date()),
                                displayedComponents: [.date])
@@ -690,6 +698,7 @@ struct LiquidTodayView: View {
                           maxValue: effortScale == .whoop ? 21 : 100,
                           decimals: effortScale == .whoop ? 1 : 0,
                           detailRoute: .metric(HeroRingMetric.effort))
+            // Hosted Nutry reads this score as "Repos" once the French catalog resolves "Rest".
             HeroScoreCell(label: String(localized: "Rest"), score: restScore, tint: StrandPalette.restColor,
                           animated: dataLoaded, onGuide: { guideSection = .rest },
                           detailRoute: .metric(HeroRingMetric.rest))
@@ -701,7 +710,7 @@ struct LiquidTodayView: View {
                             .frame(width: HeroScoreCell.vesselDiameter, alignment: .trailing)
                             .offset(y: -(NoopMetrics.space4 + NoopMetrics.sourceBadgeHeight / 2))
                             .allowsHitTesting(false)
-                            .accessibilityLabel(Text("Source: \(sourceLabel)"))
+                            .accessibilityLabel(Text(String(localized: "Source: \(sourceLabel)")))
                     }
                 }
         }
@@ -728,6 +737,12 @@ struct LiquidTodayView: View {
             }
             .buttonStyle(LiquidPressStyle())
             .accessibilityHint("Opens the full-day heart rate timeline")
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(key: LiquidHeartRateCardFrameKey.self,
+                                           value: geometry.frame(in: .named(Self.daySwipeSpace)))
+                }
+            }
         }
     }
 
@@ -815,6 +830,12 @@ struct LiquidTodayView: View {
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textTertiary)
                             .frame(maxWidth: .infinity, minHeight: 60, alignment: .center)
+                    }
+                    if let maskedCaption = stressActivityMaskedHoursCaption(hostedStressActivityMaskedHours) {
+                        Text(maskedCaption)
+                            .font(StrandFont.footnote)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -1307,7 +1328,10 @@ struct LiquidTodayView: View {
         let rhr = (displayDay?.restingHr ?? restingHrDay?.restingHr).map(Double.init)
         return VStack(spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                sectionHead("KEY METRICS", trailing: trendWindowLabel)
+                // The label names the window the DETAILED tiles graph, so it is only honest while they
+                // are drawn: with the trend graphs off (the default) nothing in this section renders a
+                // trend, and the header was still announcing one (#2376).
+                sectionHead("KEY METRICS", trailing: keyMetricsDetailed ? trendWindowLabel : nil)
                 // #430 parity: the SAME editor the classic grid uses — selection + order + Detailed tiles.
                 Button { customizationDestination = .keyMetrics } label: {
                     Text(String(localized: "Edit").uppercased())
@@ -1362,7 +1386,7 @@ struct LiquidTodayView: View {
         case .rest:
             ktile(String(localized: "Rest"), icon: keyMetricIcon(metric), intText(restScore), "%", StrandPalette.restColor, frac(restScore), key: HeroRingMetric.rest)
         case .hrv:
-            ktile("HRV", icon: keyMetricIcon(metric), intText(hrv), "ms", StrandPalette.metricCyan, fracOver(hrv, 120), key: "hrv")
+            ktile(String(localized: "HRV"), icon: keyMetricIcon(metric), intText(hrv), "ms", StrandPalette.metricCyan, fracOver(hrv, 120), key: "hrv")
         case .restingHr:
             ktile(String(localized: "Rest HR"), icon: keyMetricIcon(metric), intText(rhr), "bpm", StrandPalette.metricRose, fracOver(rhr, 100), key: "rhr")
         case .bloodOxygen:
@@ -1561,11 +1585,16 @@ struct LiquidTodayView: View {
 
     // MARK: - Reusable chrome
 
-    private func sectionHead(_ title: String, trailing: String) -> some View {
+    /// `trailing` is optional so a section can omit it entirely rather than carry a caption for
+    /// something it is not drawing (the Key Metrics window label, when the trend graphs are off).
+    /// Matches the Android twin, whose `SectionHeader` already takes `trailing: String? = null`.
+    private func sectionHead(_ title: String, trailing: String? = nil) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(LocalizedStringKey(title)).font(StrandFont.overline).tracking(1.6).foregroundStyle(StrandPalette.textTertiary)
             Spacer()
-            Text(LocalizedStringKey(trailing)).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+            if let trailing {
+                Text(LocalizedStringKey(trailing)).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+            }
         }
         .padding(.horizontal, 2)
         .padding(.top, 4)
@@ -1651,7 +1680,11 @@ struct LiquidTodayView: View {
             // max, so the stored row simply won) which is why it went unnoticed. 200_000 is what every
             // other whole-window HR consumer already passes.
             let todayHr = await repo.hrSamples(from: from, to: to, limit: 200_000)
-            let maxHR = profile.age > 0 ? StrainScorer.tanakaHRmax(age: Double(profile.age)) : nil
+            // #2460: the manual HR-max override, then Tanaka, exactly as AnalyticsEngine resolves it
+            // for the STORED day. These two numbers meet in `effectiveEffort`, which takes the larger,
+            // so a live value on the formula's yardstick outvoted an override set because the real
+            // maximum is above it. See `ProfileStore.effortHRmax`.
+            let maxHR = profile.effortHRmax
             let restHR = day?.restingHr.map(Double.init) ?? StrainScorer.defaultRestingHR
             liveStrainLocal = StrainScorer.strain(todayHr, maxHR: maxHR, restingHR: restHR,
                                                   method: PuffinExperiment.effortMethod, sex: profile.sex)
@@ -1827,9 +1860,17 @@ struct LiquidTodayView: View {
         }
 
         // #2040: and today's stress, on the same "only when hosted" rule.
-        hostedStressHours = HostedCardPrefs.decodeEnabled(hostedCardsRaw).contains(.stressToday)
-            ? (await StressDayCurve.today(repo: repo)?.result.timeline ?? [])
-            : []
+        if HostedCardPrefs.decodeEnabled(hostedCardsRaw).contains(.stressToday) {
+            let result = await StressDayCurve.today(
+                repo: repo,
+                personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled
+            )?.result
+            hostedStressHours = result?.timeline ?? []
+            hostedStressActivityMaskedHours = result?.activityMaskedHours ?? 0
+        } else {
+            hostedStressHours = []
+            hostedStressActivityMaskedHours = 0
+        }
 
         // First load done — bring the hero gauges + sky to life now the launch churn has settled.
         if !dataLoaded { withAnimation(.easeIn(duration: 0.4)) { dataLoaded = true } }
@@ -2067,6 +2108,12 @@ struct LiquidTodayView: View {
     }
 }
 
+/// Measures the heart-rate card in the same coordinate space as the day-swipe gesture.
+private struct LiquidHeartRateCardFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .null
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+}
+
 /// Carries the Today scroll's top overscroll offset up to the view for the custom liquid pull-to-refresh.
 private struct PullOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
@@ -2211,7 +2258,7 @@ private struct HeroScoreCell: View {
                 .foregroundStyle(StrandPalette.textSecondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("\(label), \(spokenScore). See how it is scored."))
+            .accessibilityLabel(Text(String(localized: "\(label), \(spokenScore). See how it is scored.")))
         }
         .frame(maxWidth: .infinity)
     }
@@ -2394,14 +2441,20 @@ private struct LiquidLiveHR: View {
     @EnvironmentObject private var live: LiveState
     @State private var samples: [Double] = []
     @State private var beat = false
+    @State private var scrubX: CGFloat?
+    #if os(iOS)
+    @State private var scrubEngaged = false
+    #endif
     private let maxSamples = 90   // ~1.5 min of 1 Hz live HR, enough to read the shape
 
     private var isLive: Bool { live.connected && samples.count >= 2 }
     private var series: [Double] { isLive ? samples : fallback }
+    /// The big number is the LIVE heart rate only. It used to fall back to the last banked 5-minute average, drawn
+    /// exactly like a live reading, so with the strap off the wrist the card went on showing one (a tester's 91). The
+    /// day's trace and its labelled min / avg / max still show without a live strap.
     private var bigBpm: Int? {
-        if let hr = live.heartRate, hr > 0, live.connected { return hr }
-        if let last = fallback.last { return Int(last.rounded()) }
-        return nil
+        guard let hr = live.heartRate, hr > 0, live.connected else { return nil }
+        return hr
     }
     private var subtitle: String {
         if isLive { return String(localized: "Live · beat by beat") }
@@ -2457,6 +2510,21 @@ private struct LiquidLiveHR: View {
                 }
                 .frame(height: 92)
                 .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.space2, style: .continuous))
+                .contentShape(Rectangle())
+                .overlay { scrubReadout }
+                .onContinuousHover(coordinateSpace: .local) { phase in
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        switch phase {
+                        case .active(let location): scrubX = location.x
+                        case .ended: scrubX = nil
+                        }
+                    }
+                }
+                #if os(iOS)
+                .gesture(touchScrubGesture)
+                #endif
                 HStack {
                     stat(String(localized: "Min"), series.min())
                     Spacer()
@@ -2476,7 +2544,9 @@ private struct LiquidLiveHR: View {
         }
         .onAppear { if samples.isEmpty, let hr = live.heartRate, hr > 0 { samples = [Double(hr)] } }
         .onChangeCompat(of: live.heartRate) { hr in
-            guard let hr, hr > 0 else { return }
+            // No live heart rate (the strap off the wrist, or gone): drop the trace, so the card stops calling an
+            // old one "Live" and shows today's average under its own label.
+            guard let hr, hr > 0 else { samples.removeAll(); return }
             samples.append(Double(hr))
             if samples.count > maxSamples { samples.removeFirst(samples.count - maxSamples) }
             beat.toggle()
@@ -2490,6 +2560,62 @@ private struct LiquidLiveHR: View {
                 .font(StrandFont.captionNumber).foregroundStyle(StrandPalette.textSecondary)
         }
     }
+
+    /// Uses the thread renderer's ten-point inset and equal-distance sample positions, so the
+    /// readout points to the value actually drawn under the finger even for a sparse banked trace.
+    private var scrubReadout: some View {
+        GeometryReader { geometry in
+            if let scrubX, series.count >= 2 {
+                // The renderer's own mapping, not a copy of it: a private inset or span floor here would
+                // agree by inspection and then drift the crosshair off the curve the moment either moved.
+                let plot = LiquidRender.ThreadPlot(size: geometry.size, values: series)
+                let index = plot.nearestIndex(toX: Double(scrubX))
+                let width = geometry.size.width
+                let x = CGFloat(plot.x(index))
+                let y = CGFloat(plot.y(series[index]))
+                Path { path in
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+                }
+                .stroke(tint, lineWidth: NoopMetrics.hairlineWidth)
+                Circle().fill(tint).frame(width: 8, height: 8).position(x: x, y: y)
+                (Text(String(localized: "\(Int(series[index].rounded()))")).font(StrandFont.captionNumber)
+                    + Text(" bpm").font(StrandFont.caption))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                    .padding(.horizontal, NoopMetrics.space2)
+                    .padding(.vertical, NoopMetrics.space1)
+                    .background(StrandPalette.surfaceBase.opacity(0.9), in: Capsule())
+                    .position(x: min(max(x, 48), max(48, width - 48)), y: 15)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    #if os(iOS)
+    private var touchScrubGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.25, maximumDistance: 8)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+            .onChanged { value in
+                guard case .second(true, let drag) = value else { return }
+                if !scrubEngaged {
+                    scrubEngaged = true
+                    StrandHaptic.selection.play()
+                }
+                if let drag {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) { scrubX = drag.location.x }
+                }
+            }
+            .onEnded { _ in
+                scrubEngaged = false
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { scrubX = nil }
+            }
+    }
+    #endif
 }
 
 /// Static technical grid behind the live trace. Canvas draws only when layout/style changes, so the
@@ -2558,9 +2684,11 @@ extension LiquidTodayView {
         case offline
         /// Linked, but no charge reading has landed yet. `charging` is still knowable on its own.
         case pending(charging: Bool)
-        /// A reading from the current link.
-        case charge(pct: Double, charging: Bool)
-        /// The strap is not the active device, so this control has nothing to say and is not drawn.
+        /// A reading from the current link. `isRing` says whose: the ring's own charge under an active
+        /// ring, the strap's under an active strap — the label names the device the number belongs to.
+        case charge(pct: Double, charging: Bool, isRing: Bool)
+        /// The active device is neither the strap nor a ring that has reported its charge this link, so
+        /// this control has nothing to say and is not drawn.
         ///
         /// Distinct from [offline], which asserts a strap that IS active is not connected. Collapsing the
         /// two put a crossed-out bolt and "strap not connected" on the header of a wearer whose ring was
@@ -2571,16 +2699,26 @@ extension LiquidTodayView {
         /// #2208: `activeIsWhoop` is required, not defaulted. `connected` alone was never enough: it is
         /// true the moment ANY source streams, `batteryPct` is the strap's and is never cleared, so under
         /// an active ring both halves of the old gate passed and this drew the strap's charge. Charging
-        /// is strap-only for the same reason, so a non-WHOOP active device reports neither.
+        /// is strap-only for the same reason, so a non-WHOOP active device reports neither of the strap's.
         ///
-        /// No default value on purpose. A defaulted flag is one a future call site can forget, and
+        /// A ring reports its OWN charge into `ringPct` (`LiveState.ouraBatteryPct`), cleared with the
+        /// link, so under a non-WHOOP active device a non-nil `ringPct` is a reading from the ring that is
+        /// live right now and is drawn as such; nil (no ring, or none has reported yet) keeps the control
+        /// off the header. `ringCharging` is the ring's charger state (`OuraWearState.charging`), the only
+        /// charging evidence a ring gives. Same resolution `LiveConsoleReadout.batteryPercent` applies.
+        ///
+        /// No default values on purpose. A defaulted flag is one a future call site can forget, and
         /// forgetting it reinstates exactly this bug in a form that still compiles.
         static func resolve(activeIsWhoop: Bool, connected: Bool,
-                            batteryPct: Double?, charging: Bool?) -> StrapBatteryDisplay {
-            guard activeIsWhoop else { return .notActiveDevice }
+                            batteryPct: Double?, charging: Bool?,
+                            ringPct: Int?, ringCharging: Bool) -> StrapBatteryDisplay {
+            guard activeIsWhoop else {
+                guard let ringPct else { return .notActiveDevice }
+                return .charge(pct: Double(ringPct), charging: ringCharging, isRing: true)
+            }
             guard connected else { return .offline }
             guard let pct = batteryPct else { return .pending(charging: charging == true) }
-            return .charge(pct: pct, charging: charging == true)
+            return .charge(pct: pct, charging: charging == true, isRing: false)
         }
     }
 
@@ -2665,8 +2803,9 @@ extension LiquidTodayView {
     }
 }
 
-/// Strap-battery ring. At sync start it briefly expands within the trailing control row, then settles into
-/// an in-place spinner; the layered header keeps either state from moving the Today content. Tap → Devices.
+/// Active-device battery ring: the strap's charge under an active strap, the ring's own under an active
+/// ring. At sync start it briefly expands within the trailing control row, then settles into an in-place
+/// spinner; the layered header keeps either state from moving the Today content. Tap → Devices.
 private struct LiquidBatteryButton: View {
     @EnvironmentObject var live: LiveState
     @EnvironmentObject var router: NavRouter
@@ -2703,7 +2842,9 @@ private struct LiquidBatteryButton: View {
                 activeIsWhoop: true,
                 connected: true,
                 batteryPct: DemoSyncHarness.batteryPercent,
-                charging: DemoSyncHarness.charging
+                charging: DemoSyncHarness.charging,
+                ringPct: nil,
+                ringCharging: false
             )
         }
         #endif
@@ -2711,7 +2852,9 @@ private struct LiquidBatteryButton: View {
             activeIsWhoop: live.activeIsWhoop,
             connected: live.connected,
             batteryPct: live.batteryPct,
-            charging: live.charging
+            charging: live.charging,
+            ringPct: live.ouraBatteryPct,
+            ringCharging: live.ouraWearState == .charging
         )
     }
 
@@ -2721,16 +2864,18 @@ private struct LiquidBatteryButton: View {
             return .offline
         case .pending(let charging):
             return .pending(charging: charging)
-        case .charge(let percent, let charging):
+        case .charge(let percent, let charging, _):
             return .charge(percent: percent, charging: charging)
         }
     }
 
     var body: some View {
-        // Not drawn at all when the strap is not the active device. The alternative is a glyph that
-        // has to say SOMETHING about a strap nobody is wearing, and every option is a claim: a charge
-        // that is not the active device's, or a crossed-out bolt asserting a disconnection that is not
-        // the interesting fact. The two Today rows already resolve it this way. (#2208)
+        // Not drawn at all when the active device is neither the strap nor a ring with a charge of its
+        // own to show. The alternative is a glyph that has to say SOMETHING about a strap nobody is
+        // wearing, and every option is a claim: a charge that is not the active device's, or a crossed-out
+        // bolt asserting a disconnection that is not the interesting fact. (#2208) A ring that HAS
+        // reported its charge is the active device's own reading, and #2208's fix left it undrawn only
+        // because the control could not yet tell whose number it held.
         if case .notActiveDevice = batteryDisplay {
             EmptyView()
         } else {
@@ -2824,8 +2969,15 @@ private struct LiquidBatteryButton: View {
             return charging
                 ? String(localized: "Strap battery charging, no reading yet")
                 : String(localized: "Strap battery, no reading yet")
-        case .charge(let percent, let charging):
+        case .charge(let percent, let charging, let isRing):
             let n = Int(percent.rounded())
+            // Named for the device the number belongs to: "Strap battery" over a ring's charge would be
+            // the #2208 misattribution again, in the label instead of the number.
+            if isRing {
+                return charging
+                    ? String(localized: "Ring battery \(n) percent, charging")
+                    : String(localized: "Ring battery \(n) percent")
+            }
             return charging
                 ? String(localized: "Strap battery \(n) percent, charging")
                 : String(localized: "Strap battery \(n) percent")

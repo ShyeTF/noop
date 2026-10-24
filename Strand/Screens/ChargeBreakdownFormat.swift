@@ -385,7 +385,7 @@ struct SkinTempDeviationRow: View {
             ConfidenceTierChip(confidence: .solid)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Skin temperature \(deviationText). \(tierWord). Reliable.")
+        .accessibilityLabel(String(localized: "Skin temperature \(deviationText). \(tierWord). Reliable."))
     }
 }
 

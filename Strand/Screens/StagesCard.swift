@@ -305,7 +305,7 @@ struct StageDetailView: View {
         let pct = Int((coverage * 100).rounded(.down))
         return HStack(alignment: .top, spacing: 8) {
             SourceBadge("Partly recorded", tint: StrandPalette.statusWarning)
-            Text("Only \(pct)% of this night's window has stage data. The stage totals cover only that part of the night.")
+            Text(String(localized: "Only \(pct)% of this night's window has stage data. The stage totals cover only that part of the night."))
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -348,7 +348,7 @@ struct StageDetailView: View {
             .frame(height: 34)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Sleep stage breakdown: deep \(stageSharePercent(.deep, s)) percent, light \(stageSharePercent(.light, s)) percent, REM \(stageSharePercent(.rem, s)) percent, awake \(stageSharePercent(.awake, s)) percent")
+            .accessibilityLabel(String(localized: "Sleep stage breakdown: deep \(stageSharePercent(.deep, s)) percent, light \(stageSharePercent(.light, s)) percent, REM \(stageSharePercent(.rem, s)) percent, awake \(stageSharePercent(.awake, s)) percent"))
             HStack(spacing: 16) {
                 legend(.deep, String(localized: "Deep"))
                 legend(.light, String(localized: "Light"))
@@ -379,15 +379,16 @@ struct StageDetailView: View {
 
     /// The four stage rows that replace the old footer "label · value" grid, read like WHOOP's sleep
     /// detail: a colour swatch, the UPPERCASE stage name, the share-of-night % in the stage colour, a
-    /// proportional bar in the stage colour over a faint track, and the right-aligned duration. Same data
-    /// as the prior footer (`s.rem` / `s.deep` / `s.light` / `s.awake` over `s.total`) — no new numbers.
+    /// proportional bar in the stage colour over a faint track, and the right-aligned duration. Same data as
+    /// the prior footer, ordered by chart depth (awake / REM / light / deep) so Today and the Sleep detail
+    /// agree; the values and colours stay attached to their own stage. No new numbers.
     @ViewBuilder
     private func stageBreakdownRows(_ s: Stages, palette: SleepStagePalette = .noop) -> some View {
         VStack(alignment: .leading, spacing: NoopMetrics.cardInnerSpacing) {
-            stageBreakdownRow(.rem,   minutes: s.rem,   total: s.total, percent: stageSharePercent(.rem, s), palette: palette)
-            stageBreakdownRow(.deep,  minutes: s.deep,  total: s.total, percent: stageSharePercent(.deep, s), palette: palette)
-            stageBreakdownRow(.light, minutes: s.light, total: s.total, percent: stageSharePercent(.light, s), palette: palette)
             stageBreakdownRow(.awake, minutes: s.awake, total: s.total, percent: stageSharePercent(.awake, s), palette: palette)
+            stageBreakdownRow(.rem,   minutes: s.rem,   total: s.total, percent: stageSharePercent(.rem, s), palette: palette)
+            stageBreakdownRow(.light, minutes: s.light, total: s.total, percent: stageSharePercent(.light, s), palette: palette)
+            stageBreakdownRow(.deep,  minutes: s.deep,  total: s.total, percent: stageSharePercent(.deep, s), palette: palette)
         }
     }
 
@@ -451,7 +452,7 @@ struct StageDetailView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(stage.label): \(durationText(minutes)), \(percent) percent of the night")
+        .accessibilityLabel(String(localized: "\(stage.label): \(durationText(minutes)), \(percent) percent of the night"))
         .accessibilityHint("Highlights this stage on the sleep chart")
         .accessibilityAddTraits(.isButton)
     }
@@ -483,9 +484,9 @@ struct StageDetailView: View {
                 .padding(.horizontal, 10)
                 .padding(.bottom, 2)
             stageTimelineRow(.awake, minutes: s.awake, percent: stageSharePercent(.awake, s), intervals: smoothed, origin: origin, span: span)
+            stageTimelineRow(.rem,   minutes: s.rem,   percent: stageSharePercent(.rem, s), intervals: smoothed, origin: origin, span: span)
             stageTimelineRow(.light, minutes: s.light, percent: stageSharePercent(.light, s), intervals: smoothed, origin: origin, span: span)
             stageTimelineRow(.deep,  minutes: s.deep,  percent: stageSharePercent(.deep, s), intervals: smoothed, origin: origin, span: span)
-            stageTimelineRow(.rem,   minutes: s.rem,   percent: stageSharePercent(.rem, s), intervals: smoothed, origin: origin, span: span)
             // onset · midpoint · wake clock labels, aligned with the rows' inner strips.
             HStack {
                 Text(Self.stageAxisFormatter.string(from: night.onsetDate))
@@ -523,7 +524,7 @@ struct StageDetailView: View {
                     .tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.textTertiary)
                 if let t = stageTypical(nil) {
-                    Text("typically \(durationText(t.mean))")
+                    Text(String(localized: "typically \(durationText(t.mean))"))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -537,7 +538,7 @@ struct StageDetailView: View {
                     .tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.textTertiary)
                 if let t = restorativeTypical() {
-                    Text("typically \(durationText(t))")
+                    Text(String(localized: "typically \(durationText(t))"))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -558,12 +559,12 @@ struct StageDetailView: View {
                     : (minutes < t.lo ? String(localized: "below your usual")
                                       : String(localized: "about your usual"))
                 (Text(sel.label).fontWeight(.semibold).foregroundColor(StrandPalette.sleepStageColor(sel))
-                    + Text(" \(durationText(minutes)) · typically \(durationText(t.lo)) to \(durationText(t.hi)), \(phrase)."))
+                    + Text(String(localized: " \(durationText(minutes)) · typically \(durationText(t.lo)) to \(durationText(t.hi)), \(phrase).")))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .lineLimit(2)
             } else {
-                Text("\(sel.label): \(durationText(minutes)). Not enough history yet for a typical range.")
+                Text(String(localized: "\(sel.label): \(durationText(minutes)). Not enough history yet for a typical range."))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .lineLimit(2)
@@ -679,7 +680,7 @@ struct StageDetailView: View {
             withAnimation(StrandMotion.fade) { selectedStage = isSelected ? nil : stage }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(stage.label): \(durationText(minutes)), \(percent) percent of the night")
+        .accessibilityLabel(String(localized: "\(stage.label): \(durationText(minutes)), \(percent) percent of the night"))
         .accessibilityHint("Highlights this stage on the sleep chart")
         .accessibilityAddTraits(.isButton)
     }

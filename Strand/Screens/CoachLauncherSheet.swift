@@ -73,7 +73,7 @@ struct CoachLauncherSheet: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("Suggested prompt: \(prompt)"))
+            .accessibilityLabel(Text(String(localized: "Suggested prompt: \(prompt)")))
         }
 
         HStack(spacing: 8) {
@@ -103,7 +103,7 @@ struct CoachLauncherSheet: View {
     private var unconfigured: some View {
         // The SAME explanation the Coach screen shows, so the bring-your-own-key model is described
         // once. The button routes to that screen, which stays the only place a key is entered.
-        Text("Coach uses your own API key. Pick a provider, paste a key, and choose a model. Your key is stored securely in the Keychain and never leaves \(Platform.deviceNounPhrase) except as the request you make.")
+        Text(String(localized: "Coach uses your own API key. Pick a provider, paste a key, and choose a model. Your key is stored securely in the Keychain and never leaves \(Platform.deviceNounPhrase) except as the request you make."))
             .font(StrandFont.footnote)
             .foregroundStyle(StrandPalette.textTertiary)
 

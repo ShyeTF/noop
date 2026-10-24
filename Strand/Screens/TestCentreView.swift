@@ -258,7 +258,7 @@ struct TestCentreView: View {
 
                 Toggle("Protocol probes", isOn: $puffinExperiments)
                     .toggleStyle(.switch).tint(StrandPalette.accent)
-                Text("Sends experimental protocol queries and records the replies in the strap log.")
+                Text("Sends experimental protocol queries and records replies in the strap log. Also enables the experimental 5/MG strap alarm.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
 
                 Divider().overlay(StrandPalette.hairline)
@@ -390,7 +390,7 @@ struct TestCentreView: View {
                     Toggle(isOn: $polarDebugLogging) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Polar debug logging").font(StrandFont.body)
-                            Text("\(identity). Logs this to the strap log on each connect, so a Polar bug report shows the model NOOP resolved your strap to.")
+                            Text(String(localized: "\(identity). Logs this to the strap log on each connect, so a Polar bug report shows the model NOOP resolved your strap to."))
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -474,7 +474,7 @@ struct TestCentreView: View {
                     .font(StrandFont.body).textFieldStyle(.roundedBorder)
             }
 
-            Text("Frame: \(userInfoFramePreview)")
+            Text(String(localized: "Frame: \(userInfoFramePreview)"))
                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
 
             HStack(spacing: 12) {
@@ -500,7 +500,7 @@ struct TestCentreView: View {
                 }
             }
         } message: {
-            Text("Sends \(userInfoFramePreview) to the ring. This changes ring-side config. Restore with the firmware default (height 176, weight 75, sex 2) or write zeros.")
+            Text(String(localized: "Sends \(userInfoFramePreview) to the ring. This changes ring-side config. Restore with the firmware default (height 176, weight 75, sex 2) or write zeros."))
         }
     }
 
@@ -544,7 +544,7 @@ struct TestCentreView: View {
                 }
             }
         } message: { pending in
-            Text("Sends \(pending.framePreview) to the ring. Unvalidated on NOOP's own hardware (OURA_PROTOCOL.md \u{00A7}7.5). Watch the strap log for the follow-up feature-status read.")
+            Text(String(localized: "Sends \(pending.framePreview) to the ring. Unvalidated on NOOP's own hardware (OURA_PROTOCOL.md \u{00A7}7.5). Watch the strap log for the follow-up feature-status read."))
         }
     }
 
@@ -687,7 +687,7 @@ struct TestCentreView: View {
                     NoopButton("Run now", systemImage: "square.and.arrow.down.on.square", kind: .secondary) {
                         runScheduledExportNow()
                     }
-                    Text("On iPhone this is best-effort (iOS decides when background tasks run). Everything stays on \(Platform.deviceNounPhrase).")
+                    Text(String(localized: "On iPhone this is best-effort (iOS decides when background tasks run). Everything stays on \(Platform.deviceNounPhrase)."))
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -754,19 +754,19 @@ struct TestCentreView: View {
         VStack(alignment: .leading, spacing: 2) {
             if let r = result {
                 let label = hrvTierLabel(r.tier)
-                Text("HRV readiness (experimental): \(label.word)")
+                Text(String(localized: "HRV readiness (experimental): \(label.word)"))
                     .font(StrandFont.subhead).foregroundStyle(label.color)
                 let base = Int(r.baseline7Ms.rounded())
                 let lo = Int(r.normalLowMs.rounded())
                 let hi = Int(r.normalHighMs.rounded())
                 let watch = r.overreachingWatch ? ", overreaching watch" : ""
-                Text("7-night baseline \(base) ms, normal \(lo) to \(hi) ms\(watch)")
+                Text(String(localized: "7-night baseline \(base) ms, normal \(lo) to \(hi) ms\(watch)"))
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("HRV readiness (experimental)")
                     .font(StrandFont.subhead).foregroundStyle(StrandPalette.textTertiary)
-                Text("Calibrating (\(hrvValidNightCount)/\(HRVReadiness.minNights) nights)")
+                Text(String(localized: "Calibrating (\(hrvValidNightCount)/\(HRVReadiness.minNights) nights)"))
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
             }
         }
@@ -903,7 +903,7 @@ private struct TestModeRow: View {
     /// The HONEST per-mode captured-day count for a guided row (#965): distinct days THIS mode produced its
     /// own trace on, read from the same shareable log the report exports, so each active mode accumulates
     /// its OWN count instead of every guided row sharing one elapsed-clock number. nil for a toggle mode
-    /// (no "K of N") and when the mode is off. Recomputes with `live.log` (published) so the row updates as
+    /// (no "K of N") and when the mode is off. Recomputes with `live.log`, which the coalesced `logRevision` invalidates (#2547), so the row updates as
     /// new capture days land.
     private var capturedUnits: Int? {
         guard on, case .guided = mode.capture else { return nil }
@@ -927,7 +927,7 @@ private struct TestModeRow: View {
                 Toggle("", isOn: $on)
                     .labelsHidden()
                     .tint(StrandPalette.accent)
-                    .accessibilityLabel("\(mode.title) test mode")
+                    .accessibilityLabel(String(localized: "\(mode.title) test mode"))
                     .onChangeCompat(of: on) { isOn in
                         if isOn { TestCentre.activate(mode.domain) } else { TestCentre.deactivate(mode.domain) }
                         // Display & Performance owns a live frame monitor. It must run ONLY while the mode

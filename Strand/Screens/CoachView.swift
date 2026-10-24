@@ -25,10 +25,12 @@ struct CoachView: View {
     @State private var draft: String = UserDefaults.standard.string(forKey: "coach.composerDraft") ?? ""
     /// Pending key text in the setup card (never persisted here, handed to `setKey`).
     @State private var keyDraft: String = ""
-    /// The corrected key, typed into the editor a rejection opens. Separate from `keyDraft` so the
+    /// The replacement key, typed into the editor a rejection or Update key opens. Separate from
+    /// `keyDraft` so the
     /// setup card's own field is untouched, and cleared on save so a secret does not sit in view state
     /// after it has been stored. Twin of the Kotlin `keyFix`.
     @State private var keyFix: String = ""
+    @State private var showKeyEditor = false
     /// Whether the model selector is in free-text "Custom…" mode.
     @State private var customModel: Bool = false
     /// The id typed in the "Custom…" field.
@@ -67,12 +69,8 @@ struct CoachView: View {
                 transcript
                 if let error = coach.errorText, !error.isEmpty {
                     errorBanner(error)
-                    // A rejected key is the one failure the wearer can act on from here, and the
-                    // message already tells them to: "Check the key and the provider you selected".
-                    // Until this, the screen offered nowhere to check it. Rendered INSIDE the error
-                    // branch, never on its own flag, so it cannot outlive the message justifying it.
-                    if coach.keyRejected { keyRepairPanel }
                 }
+                if coach.keyRejected || showKeyEditor { keyRepairPanel }
                 // K7: show follow-up chips after each assistant reply (when the transcript is
                 // non-empty and the last message is from the assistant and not mid-send);
                 // otherwise show the initial contextual chips.
@@ -92,7 +90,7 @@ struct CoachView: View {
                 setupCard
             }
         }
-        // macOS only. On iOS these two live in `connectionMenu` instead, because this bar is hidden for
+        // macOS only. On iOS these actions live in `connectionMenu` instead, because this bar is hidden for
         // a primary tab root and VISIBLE in the pillar sheet, so leaving them here would render nothing
         // on the Coach tab and a duplicate of the menu in the sheet. One control per platform, reachable
         // in both of iOS's presentations. The `#if` sits on the CHAIN rather than inside the builder:
@@ -101,6 +99,13 @@ struct CoachView: View {
         #if os(macOS)
         .toolbar {
             if coach.isConfigured {
+                ToolbarItem {
+                    Button {
+                        toggleKeyEditor()
+                    } label: {
+                        Label("Update key", systemImage: "key.fill")
+                    }
+                }
                 // K2: wipe the persisted + in-memory conversation. Confirmed, since it's destructive.
                 ToolbarItem {
                     Button(role: .destructive) {
@@ -150,6 +155,7 @@ struct CoachView: View {
         // transcript genuinely empty.
         .task {
             await coach.loadPersistedMessagesIfNeeded()
+            coach.retireStaleConversationIfNeeded()
             // Gated on the transcript BEFORE consuming. `consumeStoredBrief()` clears the unconsumed
             // flag, and `surfaceScheduledBrief` then drops the text if a transcript exists, so a brief
             // that arrived on a day with a conversation already open was consumed and thrown away, gone
@@ -202,7 +208,7 @@ struct CoachView: View {
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
 
-                Text("Coach uses your own API key. Pick a provider, paste a key, and choose a model. Your key is stored securely in the Keychain and never leaves \(Platform.deviceNounPhrase) except as the request you make.")
+                Text(String(localized: "Coach uses your own API key. Pick a provider, paste a key, and choose a model. Your key is stored securely in the Keychain and never leaves \(Platform.deviceNounPhrase) except as the request you make."))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -235,7 +241,7 @@ struct CoachView: View {
                                 .strokeBorder(StrandPalette.hairline, lineWidth: 1))
                             .disableAutocorrection(true)
                             .accessibilityLabel("Server URL")
-                        Text("Any OpenAI-compatible server: Ollama, LM Studio, llama.cpp, or your own gateway. Stays on your network; nothing leaves \(Platform.deviceNounPhrase).")
+                        Text(String(localized: "Any OpenAI-compatible server: Ollama, LM Studio, llama.cpp, or your own gateway. Stays on your network; nothing leaves \(Platform.deviceNounPhrase)."))
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -411,13 +417,13 @@ struct CoachView: View {
     }
 
     #if os(iOS)
-    /// #2206: the same two actions the toolbar above carries, drawn where iPhone can reach them.
+    /// #2206: the same connection actions the toolbar above carries, drawn where iPhone can reach them.
     ///
     /// `RootTabView.tab(...)` wraps every primary tab root in a NavigationStack and applies
     /// `.toolbar(.hidden, for: .navigationBar)`, because each screen draws its own in-content header.
     /// So Clear conversation and Disconnect were being placed into a bar this platform never shows, and
-    /// rendered nowhere. Disconnect is the ONLY route back to the setup card, which is the only place
-    /// an API key can be typed: `isConfigured` gates that card away the moment a key is saved. The
+    /// rendered nowhere. At the time, Disconnect was the only route back to the setup card: `isConfigured`
+    /// gates that card away the moment a key is saved. The
     /// result was a key that could be set once and then never changed, with reinstalling the app the
     /// only way out, which on an offline-first app costs the wearer their entire history.
     ///
@@ -439,6 +445,11 @@ struct CoachView: View {
     /// since its toolbar button existed, so this is a latent edge being written down, not a new one.
     private var connectionMenu: some View {
         Menu {
+            Button {
+                toggleKeyEditor()
+            } label: {
+                Label("Update key", systemImage: "key.fill")
+            }
             Button {
                 showClearConfirm = true
             } label: {
@@ -534,7 +545,7 @@ struct CoachView: View {
                     .frame(maxWidth: 520, alignment: .trailing)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("You said: \(message.text)")
+            .accessibilityLabel(String(localized: "You said: \(message.text)"))
         case .assistant:
             // LLM replies arrive as Markdown (bold, lists, headings, tables),             // rendered with the chat-bubble-sized Strand theme. User bubbles stay
             // verbatim `Text` so typed `*`/`#` never turn into surprise formatting.
@@ -573,7 +584,7 @@ struct CoachView: View {
                 Spacer(minLength: 48)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Coach said: \(message.text)")
+            .accessibilityLabel(String(localized: "Coach said: \(message.text)"))
         }
     }
 
@@ -606,10 +617,10 @@ struct CoachView: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Error: \(message)")
+        .accessibilityLabel(String(localized: "Error: \(message)"))
     }
 
-    /// The inline "your key was turned away, here is the field" repair, shown under a rejection.
+    /// The inline replacement-key editor, shown after a rejection or an Update key action.
     ///
     /// Saving goes through `setKey`, which replaces the stored key and leaves the transcript alone. The
     /// existing route was the Disconnect button, which also wipes the conversation and un-commits a
@@ -618,10 +629,12 @@ struct CoachView: View {
     private var keyRepairPanel: some View {
         StrandCard(padding: 14) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Paste the corrected key. Your conversation is kept.")
-                    .font(StrandFont.footnote)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if coach.keyRejected {
+                    Text("Paste the corrected key. Your conversation is kept.")
+                        .font(StrandFont.footnote)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 SecureField("Paste your \(coach.provider.displayName) API key", text: $keyFix)
                     .textFieldStyle(.plain)
                     .font(StrandFont.body)
@@ -632,11 +645,14 @@ struct CoachView: View {
                     .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .strokeBorder(StrandPalette.hairline, lineWidth: 1))
                     .onSubmit(saveRepairedKey)
-                    .accessibilityLabel("Corrected API key")
+                    .accessibilityLabel(coach.keyRejected ? Text("Corrected API key") : Text("API key"))
                 HStack {
                     NoopButton("Update key", systemImage: "key.fill", kind: .primary, action: saveRepairedKey)
                         .disabled(keyFix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     Spacer()
+                    if showKeyEditor && !coach.keyRejected {
+                        Button("Cancel") { toggleKeyEditor() }
+                    }
                 }
             }
         }
@@ -648,7 +664,14 @@ struct CoachView: View {
         let trimmed = keyFix.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         coach.setKey(trimmed)
+        guard coach.errorText == nil else { return }
         keyFix = ""
+        showKeyEditor = false
+    }
+
+    private func toggleKeyEditor() {
+        showKeyEditor.toggle()
+        if !showKeyEditor { keyFix = "" }
     }
 
     private var suggestionChips: some View {
@@ -670,7 +693,7 @@ struct CoachView: View {
                     // affordance gets, replacing the flat `.plain` press.
                     .buttonStyle(LiquidPressStyle())
                     .disabled(coach.sending)
-                    .accessibilityLabel("Suggested prompt: \(prompt)")
+                    .accessibilityLabel(String(localized: "Suggested prompt: \(prompt)"))
                 }
             }
             .padding(.vertical, 1)
@@ -704,7 +727,7 @@ struct CoachView: View {
                     }
                     .buttonStyle(LiquidPressStyle())
                     .disabled(coach.sending)
-                    .accessibilityLabel("Follow-up prompt: \(prompt)")
+                    .accessibilityLabel(String(localized: "Follow-up prompt: \(prompt)"))
                 }
             }
             .padding(.vertical, 1)
@@ -718,7 +741,7 @@ struct CoachView: View {
             Image(systemName: "speedometer")
                 .font(.system(size: 10))
                 .foregroundStyle(StrandPalette.textTertiary)
-            Text("~\(tokens) tokens")
+            Text(String(localized: "~\(tokens) tokens"))
                 .font(StrandFont.captionNumber)
                 .foregroundStyle(StrandPalette.textTertiary)
             if tokens > 8000 {

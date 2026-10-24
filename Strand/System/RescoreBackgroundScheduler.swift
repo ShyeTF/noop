@@ -2,6 +2,68 @@ import Foundation
 #if os(iOS)
 import BackgroundTasks
 import UIKit
+
+/// One background-task identifier. `end` runs from the expiration handler and from the normal path,
+/// and exactly one of them calls `endBackgroundTask`.
+final class BackgroundTaskLease: @unchecked Sendable {
+    private let lock = NSLock()
+    private var id: UIBackgroundTaskIdentifier = .invalid
+    private var ended = false
+
+    @MainActor
+    func begin(name: String, onExpire: @escaping @Sendable () -> Void) -> Bool {
+        lock.lock()
+        if id != .invalid {
+            lock.unlock()
+            return false
+        }
+        ended = false
+        lock.unlock()
+        let newID = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            self?.end()
+            onExpire()
+        }
+        guard newID != .invalid else { return false }
+        store(newID)
+        return true
+    }
+
+    func store(_ newID: UIBackgroundTaskIdentifier) {
+        lock.lock()
+        if ended {
+            lock.unlock()
+            BackgroundTaskFinisher.end(newID)
+            return
+        }
+        id = newID
+        lock.unlock()
+    }
+
+    func end() {
+        lock.lock()
+        let current = id
+        id = .invalid
+        ended = true
+        lock.unlock()
+        BackgroundTaskFinisher.end(current)
+    }
+}
+
+enum BackgroundTaskFinisher {
+    static func end(_ id: UIBackgroundTaskIdentifier) {
+        guard id != .invalid else { return }
+        let finish = {
+            MainActor.assumeIsolated {
+                UIApplication.shared.endBackgroundTask(id)
+            }
+        }
+        if Thread.isMainThread {
+            finish()
+        } else {
+            DispatchQueue.main.sync(execute: finish)
+        }
+    }
+}
 #endif
 
 /// Runs a backgrounded re-score somewhere it can actually finish, and records honestly when one did not.
@@ -184,6 +246,8 @@ enum RescoreBackgroundScheduler {
     static func run(isBackground: Bool? = nil,
                     owesOnDefer: Bool = true,
                     passInProgress: Bool = false,
+                    heavyWorkPaused: Bool = false,
+                    blockBackgroundAnalysis: Bool = false,
                     log: @escaping (String) -> Void,
                     work: () async -> Void) async {
         let decision = RescoreBackgroundPolicy.decide(
@@ -191,7 +255,9 @@ enum RescoreBackgroundScheduler {
             isRealUpdate: owesOnDefer,
             rescoreAlreadyOwed: isRescoreOwed,
             passInProgress: passInProgress,
-            secondsSinceLastAttempt: secondsSinceLastAttempt)
+            secondsSinceLastAttempt: secondsSinceLastAttempt,
+            heavyWorkPaused: heavyWorkPaused,
+            blockBackgroundAnalysis: blockBackgroundAnalysis)
 
         switch decision {
         case .deferToBackgroundTask(let reason):
@@ -259,18 +325,15 @@ enum RescoreBackgroundScheduler {
     /// in the log and where the work is escalated, rather than the process simply vanishing.
     private static func withAssertion(log: @escaping (String) -> Void, work: () async -> Void) async {
         #if os(iOS)
-        let assertion = BackgroundAssertion()
+        let assertion = BackgroundTaskLease()
         let taskID = UIApplication.shared.beginBackgroundTask(withName: "noop.rescore") {
-            // iOS invokes this on the main thread when it is about to reclaim the assertion. The pass
-            // itself cannot be cancelled from here — its heavy loop runs in a detached task, which does
-            // not inherit cancellation — so do not pretend to stop it. Record the fact and escalate:
-            // the owed mark is still set (only a completed pass clears it) and that is what the next
-            // decision reads.
+            // End before the main-actor hop. A failed isolation check must not skip
+            // `endBackgroundTask`: UIKit kills the process when the handler returns without it.
+            assertion.end()
             MainActor.assumeIsolated {
                 assertionExpiries += 1
                 log("re-score: background time expired mid-pass — it resumes on the next wake (#1538)")
                 schedule()
-                assertion.end()
             }
         }
         assertion.store(taskID)
@@ -335,25 +398,6 @@ enum RescoreBackgroundScheduler {
     /// it while exactly one of them succeeds. UIKit treats a double `endBackgroundTask` as a programmer
     /// error and a never-ended one as grounds for killing the app, so neither may be left to ordering.
     /// Plain lock rather than actor isolation, matching `TaskCompletionGuard` below.
-    private final class BackgroundAssertion: @unchecked Sendable {
-        private let lock = NSLock()
-        private var id: UIBackgroundTaskIdentifier = .invalid
-
-        func store(_ newID: UIBackgroundTaskIdentifier) {
-            lock.lock()
-            defer { lock.unlock() }
-            id = newID
-        }
-
-        @MainActor func end() {
-            lock.lock()
-            let current = id
-            id = .invalid
-            lock.unlock()
-            guard current != .invalid else { return }
-            UIApplication.shared.endBackgroundTask(current)
-        }
-    }
 
     /// Guards `setTaskCompleted` against being called twice — once normally and once from the expiration
     /// handler — which `BGTaskScheduler` treats as a programmer error. Plain lock rather than actor

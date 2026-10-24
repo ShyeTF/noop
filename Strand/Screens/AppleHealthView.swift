@@ -391,7 +391,7 @@ struct AppleHealthView: View {
 
                 switch health.auth {
                 case .unavailable:
-                    Text("Apple Health isn't available on \(Platform.deviceNounPhrase).")
+                    Text(String(localized: "Apple Health isn't available on \(Platform.deviceNounPhrase)."))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -412,7 +412,7 @@ struct AppleHealthView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                 case .unknown, .denied:
-                    Text("Read your heart rate, HRV, blood oxygen, respiratory rate, sleep, steps and energy straight from Apple Health, and write NOOP's strap data back: sleep with full stages, continuous heart rate, workouts, and nightly vitals. Everything stays on \(Platform.deviceNounPhrase).")
+                    Text(String(localized: "Read your heart rate, HRV, blood oxygen, respiratory rate, sleep, steps and energy straight from Apple Health, and write NOOP's strap data back: sleep with full stages, continuous heart rate, workouts, and nightly vitals. Everything stays on \(Platform.deviceNounPhrase)."))
                         .font(StrandFont.caption)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -442,7 +442,7 @@ struct AppleHealthView: View {
 
                 case .authorized:
                     if let last = health.lastSync {
-                        Text("Last synced \(relativeAgo(last.timeIntervalSince1970)).")
+                        Text(String(localized: "Last synced \(relativeAgo(last.timeIntervalSince1970))."))
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textSecondary)
                     } else {

@@ -182,7 +182,7 @@ struct HRVSnapshotView: View {
                         .tracking(0.8)
                         .foregroundStyle(StrandPalette.textTertiary)
                     if phase == .capturing {
-                        Text("\(secondsRemaining)s left · \(captureBuffer.count) beats")
+                        Text(String(localized: "\(secondsRemaining)s left · \(captureBuffer.count) beats"))
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textTertiary)
                             .padding(.top, 4)
@@ -303,7 +303,7 @@ struct HRVSnapshotView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(StrandPalette.statusWarning)
                             .accessibilityHidden(true)
-                        Text("Not enough clean beats. Sit still and try again. \(result.nClean) of \(result.nInput) beats survived filtering (need \(HRVAnalyzer.minBeats)).")
+                        Text(String(localized: "Not enough clean beats. Sit still and try again. \(result.nClean) of \(result.nInput) beats survived filtering (need \(HRVAnalyzer.minBeats))."))
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)

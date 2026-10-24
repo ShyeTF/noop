@@ -139,11 +139,9 @@ public extension DeviceFamily {
     /// Unlike `forRegistryModel`, this must never infer WHOOP 5 from an unspecified model.
     static func confirmedRegistryFamily(model: String?, brand: String?) -> DeviceFamily? {
         if let brand, !brand.isEmpty, brand.caseInsensitiveCompare("WHOOP") != .orderedSame { return nil }
-        switch model?.lowercased() {
-        case "4.0", "whoop 4.0": return .whoop4
-        case "5.0", "5.0 mg", "whoop 5.0", "whoop 5.0 / mg", "mg", "whoop5": return .whoop5
-        default: return nil
-        }
+        if isWhoop4Label(model) { return .whoop4 }
+        if isWhoop5Label(model) { return .whoop5 }
+        return nil
     }
 
     /// Resolve a device-registry `model` label to the strap family that wrote its rows (#171).
@@ -159,9 +157,41 @@ public extension DeviceFamily {
     /// labels (non-WHOOP imports whose skin temp is already °C) — only a positively-identified 4.0
     /// changes scale (#938). Mirrors the Kotlin `DeviceFamily.forRegistryModel`.
     static func forRegistryModel(_ model: String?) -> DeviceFamily {
-        switch model {
-        case "4.0", "WHOOP 4.0": return .whoop4
-        default: return .whoop5
+        if isWhoop4Label(model) { return .whoop4 }
+        return .whoop5
+    }
+
+    static func foldedLabel(_ model: String?) -> String {
+        model?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    }
+
+    /// Positive 5.0 / MG spellings. A bare "WHOOP" is not one of them.
+    static func isWhoop5Label(_ model: String?) -> Bool {
+        switch foldedLabel(model) {
+        case "5", "5.0", "5.0.0",
+             "whoop 5", "whoop 5.0", "whoop 5.0.0",
+             "whoop5", "whoop5.0", "whoop5.0.0",
+             "mg", "whoop mg", "whoopmg", "whoop5mg",
+             "5.0 mg", "5.0mg", "whoop 5.0 mg", "whoop 5.0 / mg", "whoop 5.0/mg",
+             "whoop5 mg", "whoop5.0 mg", "whoop 5/mg", "whoop 5 / mg":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Spellings that positively identify a WHOOP 4.0. A 5.0 or MG token never matches,
+    /// even when the rest of the label also mentions a 4.
+    static func isWhoop4Label(_ model: String?) -> Bool {
+        let folded = foldedLabel(model)
+        if folded.isEmpty || folded.contains("5") || folded.contains("mg") { return false }
+        switch folded {
+        case "4", "4.0", "4.0.0",
+             "whoop 4", "whoop 4.0", "whoop 4.0.0",
+             "whoop4", "whoop4.0", "whoop4.0.0":
+            return true
+        default:
+            return false
         }
     }
 

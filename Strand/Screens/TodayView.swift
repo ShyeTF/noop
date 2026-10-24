@@ -390,6 +390,7 @@ struct TodayView: View {
     // cheap heart-rate fingerprint, so a refresh that changed nothing costs one indexed COUNT and no
     // rows, and the iOS widget shares the same computation rather than scoring the day twice.
     @State private var hostedStressHours: [DaytimeStress.HourPoint] = []
+    @State private var hostedStressActivityMaskedHours = 0
 
     // TODAY's in-progress Effort (NOOP 0–100 axis), recomputed over the day's HR (local-midnight→now)
     // each load so the gauge tracks today as it accumulates rather than waiting on the heavy daily pass
@@ -703,6 +704,20 @@ struct TodayView: View {
     static func clampedDayOffset(current: Int, delta: Int, maxOffset: Int) -> Int {
         let upper = max(0, maxOffset)
         return min(upper, max(0, current + delta))
+    }
+
+    /// #2378 - the day step a horizontal swipe of `dx` points asks for: +1 OLDER, -1 NEWER.
+    ///
+    /// Rightward (dx > 0) is OLDER and leftward is NEWER, which is direct manipulation — dragging the
+    /// content left brings the page to its right, the later day, into view — and the direction the
+    /// Kotlin twin already takes (`dayNavSwipeTarget`, pinned by `DayNavTest`). Apple ran the opposite
+    /// way in both shells, so the same gesture moved the day backwards here and forwards there.
+    ///
+    /// Pure and shared by both Apple shells so the direction is pinned by a test rather than living
+    /// twice inside gesture closures, which is how the two platforms drifted apart unnoticed.
+    /// Mirror EXACTLY in Kotlin.
+    static func daySwipeDelta(dx: CGFloat) -> Int {
+        dx > 0 ? 1 : -1
     }
 
     /// #16 - whole days-back offset for a date chosen in the day-nav picker, measured from the LOGICAL day
@@ -1251,8 +1266,8 @@ struct TodayView: View {
                 let dy = value.translation.height
                 // Horizontal-dominant and far enough to count as a deliberate day flip.
                 guard abs(dx) > abs(dy) * 1.5, abs(dx) > 50 else { return }
-                // Swipe LEFT (dx < 0) -> OLDER day (+1 offset); swipe RIGHT -> NEWER day (-1 offset).
-                let delta = dx < 0 ? 1 : -1
+                // Swipe RIGHT (dx > 0) -> OLDER day (+1 offset); swipe LEFT -> NEWER day (-1 offset).
+                let delta = Self.daySwipeDelta(dx: dx)
                 let next = Self.clampedDayOffset(current: selectedDayOffset, delta: delta,
                                                  maxOffset: earliestDayOffset)
                 guard next != selectedDayOffset else { return }
@@ -1297,7 +1312,7 @@ struct TodayView: View {
             }
             .buttonStyle(.plain)
             .layoutPriority(1)
-            .accessibilityLabel("\(dayNavLabel). Swipe or tap to change day")
+            .accessibilityLabel(String(localized: "\(dayNavLabel). Swipe or tap to change day"))
             .popover(isPresented: $showDayPicker) {
                 // Cap at the LOGICAL day (not raw Date()) so the calendar never offers a day ahead of the
                 // data in the 00:00-04:00 window, matching the visible date + a11y label (#16).
@@ -1697,69 +1712,6 @@ struct TodayView: View {
 
     // MARK: First-run scoring-guide card (one-time, dismissible)
 
-    /// "New here?", a single, dismissible card that points first-time users at the guide. Tapping the
-    /// card opens the guide; the ✕ closes it. Either action sets `scoringGuideCardSeen`, so it shows
-    /// once and never again. Follows the in-flow, never-modal card pattern.
-    private var scoringGuideFirstRunCard: some View {
-        NoopCard {
-            HStack(alignment: .top, spacing: 14) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 18))
-                    .foregroundStyle(StrandPalette.accent)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("New here?")
-                        .font(StrandFont.headline)
-                        .foregroundStyle(StrandPalette.textPrimary)
-                    Text("See how Charge, Effort and Rest are calculated, and how they differ from WHOOP.")
-                        .font(StrandFont.subhead)
-                        .foregroundStyle(StrandPalette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button {
-                        scoringGuideCardSeen = true
-                        showGuideTop = true
-                    } label: {
-                        Label("How your scores work", systemImage: "arrow.right")
-                            .font(StrandFont.subhead)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(StrandPalette.accent)
-                    .padding(.top, 2)
-                }
-                Spacer(minLength: 0)
-                Button {
-                    // Dismiss INTO the Updates inbox (restorable), rather than permanently hiding.
-                    withAnimation(StrandMotion.interactive) {
-                        dismissTodayCard(
-                            id: "newHere",
-                            title: String(localized: "New here?"),
-                            message: String(localized: "How Charge, Effort and Rest are calculated, and how they differ from WHOOP.")
-                        )
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(StrandPalette.textTertiary)
-                        .padding(6)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss")
-            }
-            // The whole card is tappable as the primary action; the ✕ stops the tap from also firing.
-            .contentShape(Rectangle())
-            .onTapGesture {
-                #if os(iOS)
-                StrandHaptic.selection.play()
-                #endif
-                scoringGuideCardSeen = true
-                showGuideTop = true
-            }
-        }
-        // Press-down feedback for the tappable card surface.
-        .strandPressable()
-    }
-
     // MARK: Readiness, on-device training-readiness synthesis (HRV / resting-HR / load).
 
     /// S4: Readiness now lives behind the Charge-ring tap (in `chargeBreakdownSheet`), not as a standalone
@@ -1782,10 +1734,11 @@ struct TodayView: View {
                                 .accessibilityHidden(true)
                             Text(headline).font(StrandFont.headline)
                                 .foregroundStyle(StrandPalette.textPrimary)
-                                .accessibilityLabel("Readiness: \(levelWord(r.level)). \(headline)")
+                                .accessibilityLabel(String(localized: "Readiness: \(levelWord(r.level)). \(headline)"))
                             Spacer()
                             if let acwr = r.acwr {
-                                Text("load \(String(format: "%.2f", locale: AppLanguage.activeLocale, acwr))")
+                                let loadNumber = String(format: "%.2f", locale: AppLanguage.activeLocale, acwr)
+                                Text(String(localized: "load \(loadNumber)"))
                                     .font(StrandFont.captionNumber)
                                     .foregroundStyle(StrandPalette.textTertiary)
                                     .help("Acute (7-day) vs chronic (28-day) training load. 0.8–1.3 is the sweet spot.")
@@ -2223,7 +2176,7 @@ struct TodayView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Charge baseline calibrating. \(countdown), \(unlock). \(progress).")
+        .accessibilityLabel(String(localized: "Charge baseline calibrating. \(countdown), \(unlock). \(progress)."))
     }
 
     // MARK: A1/S4 Charge breakdown sheet (the Charge-ring tap target)
@@ -2439,7 +2392,7 @@ struct TodayView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Synthesis. \(status)")
+            .accessibilityLabel(String(localized: "Synthesis. \(status)"))
             .accessibilityHint("Collapse")
         } else {
             // Collapsed: a one-liner with the category overline, the status headline and a down-chevron.
@@ -2466,7 +2419,7 @@ struct TodayView: View {
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Synthesis. \(status)")
+            .accessibilityLabel(String(localized: "Synthesis. \(status)"))
             .accessibilityHint("Expand for the full read")
         }
     }
@@ -2490,7 +2443,7 @@ struct TodayView: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Readiness: \(word)")
+        .accessibilityLabel(String(localized: "Readiness: \(word)"))
         .accessibilityHint("See your full readiness")
     }
 
@@ -2575,6 +2528,12 @@ struct TodayView: View {
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textTertiary)
                             .frame(maxWidth: .infinity, minHeight: 60, alignment: .center)
+                    }
+                    if let maskedCaption = stressActivityMaskedHoursCaption(hostedStressActivityMaskedHours) {
+                        Text(maskedCaption)
+                            .font(StrandFont.footnote)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -3069,7 +3028,7 @@ struct TodayView: View {
                     }
                     .padding(.top, 10)
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("These vitals are from \(carriedCaption(prior))")
+                    .accessibilityLabel(String(localized: "These vitals are from \(carriedCaption(prior))"))
                 }
             }
         }
@@ -3152,14 +3111,6 @@ struct TodayView: View {
             return hrvInsightDetail(prior, score: prior.recovery) + " " + carriedCaption(prior) + "."
         }
         return hrvInsightDetail(d, score: score)
-    }
-
-    /// The Synthesis status colour, keyed on the carried prior recovery when carrying, else today's.
-    private func synthesisCardColor(score: Double?) -> Color {
-        if let rec = lastScoredRecoveryDay?.recovery {
-            return StrandPalette.recoveryColor(rec)
-        }
-        return score.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textTertiary
     }
 
     /// Screen-4 insight headline, when the HRV baseline is established, the gold "primed" read
@@ -3438,7 +3389,7 @@ struct TodayView: View {
                         .accessibilityLabel("Apple Watch. Needs more data to score this yet.")
                 } else if ringHasValue(key), let label = provenanceLabel(key) {
                     SourceBadge("\(label)", tint: provenanceTint(key))
-                        .accessibilityLabel("Source: \(label)")
+                        .accessibilityLabel(String(localized: "Source: \(label)"))
                 }
             }
             // LAST in the column, below the provenance badge rather than above it. The badges sit at the
@@ -3620,7 +3571,7 @@ struct TodayView: View {
                 // (`Baselines.update` only advances `nValid` for a non-nil in-range value), so a week of
                 // wear with three R-R-less nights genuinely sits at 2. Naming the unit is the whole fix:
                 // the number is right, the reader's unit was not.
-                Text("\(n) of \(Baselines.minNightsSeed) nights").font(StrandFont.footnote)
+                Text(String(localized: "\(n) of \(Baselines.minNightsSeed) nights")).font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .lineLimit(1).minimumScaleFactor(0.7)
             } else {
@@ -4417,7 +4368,7 @@ struct TodayView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("How \(section.displayName) is calculated")
+        .accessibilityLabel(String(localized: "How \(section.displayName) is calculated"))
         .help("How this score is calculated")
     }
 
@@ -4662,16 +4613,23 @@ struct TodayView: View {
     ///
     /// The same "hosting none pays nothing" rule the sleep model above follows. `StressDayCurve` does
     /// the gating: it reads nothing until a cheap heart-rate fingerprint says today's heart rate moved,
-    /// and it memoises, so the iOS widget publishing from the same producer shares this computation
-    /// rather than scoring the day a second time.
+    /// and it memoises. The foreground lens is part of that memo's identity: Today shares the default
+    /// computation with the widget when the toggle is off, and recomputes with the selected personal
+    /// lens when it is on so this card and Stress detail cannot disagree.
     private func loadHostedStress() async {
         guard HostedCardPrefs.decodeEnabled(hostedCardsRaw).contains(.stressToday) else {
             hostedStressHours = []
+            hostedStressActivityMaskedHours = 0
             return
         }
         // `timeline`, not `hours`: the half-step display series, so the curve tracks the day rather
         // than stepping through it, matching the widget and the Android card.
-        hostedStressHours = await StressDayCurve.today(repo: repo)?.result.timeline ?? []
+        let result = await StressDayCurve.today(
+            repo: repo,
+            personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled
+        )?.result
+        hostedStressHours = result?.timeline ?? []
+        hostedStressActivityMaskedHours = result?.activityMaskedHours ?? 0
     }
 
     private func loadHostedSleepModel() async {
@@ -5093,7 +5051,11 @@ struct TodayView: View {
             // other whole-window HR consumer already passes.
             let todayHr = await repo.hrSamples(from: effortStart, to: windowEndInclusive,
                                                limit: 200_000)
-            let maxHR = profile.age > 0 ? StrainScorer.tanakaHRmax(age: Double(profile.age)) : nil
+            // #2460: the manual HR-max override, then Tanaka, exactly as AnalyticsEngine resolves it
+            // for the STORED day. These two numbers meet in `effectiveEffort`, which takes the larger,
+            // so a live value on the formula's yardstick outvoted an override set because the real
+            // maximum is above it. See `ProfileStore.effortHRmax`.
+            let maxHR = profile.effortHRmax
             let restHR = displayDay?.restingHr.map(Double.init) ?? StrainScorer.defaultRestingHR
             liveStrainLocal = StrainScorer.strain(todayHr, maxHR: maxHR, restingHR: restHR,
                                         method: PuffinExperiment.effortMethod, sex: profile.sex)
@@ -5262,27 +5224,6 @@ struct TodayView: View {
         }
     }
 
-    private var dateLine: String {
-        // The selected day's date when navigated; today's banked-row date (or today) at offset 0.
-        if selectedDayOffset == 0, let day = repo.today?.day, let date = Self.dayParser.date(from: day) {
-            return date.formatted(
-                .dateTime.weekday(.wide).day().month(.wide).locale(AppLanguage.activeLocale)
-            )
-        }
-        return selectedLogicalDay.formatted(
-            .dateTime.weekday(.wide).day().month(.wide).locale(AppLanguage.activeLocale)
-        )
-    }
-
-    /// Hero title that names the selected day, "Today's"/"Yesterday's"/"Day's" Synthesis.
-    private var synthesisTitle: LocalizedStringKey {
-        switch selectedDayOffset {
-        case 0:  return "Today’s Synthesis"
-        case 1:  return "Yesterday’s Synthesis"
-        default: return "Synthesis"
-        }
-    }
-
     /// Section overline naming the selected day, "Today"/"Yesterday"/"EEE d MMM".
     private var selectedDayOverline: String {
         switch selectedDayOffset {
@@ -5341,12 +5282,6 @@ struct TodayView: View {
             case nil:    return String(localized: "Charge is strong.")
             }
         }
-    }
-
-    private func ringSupporting(_ d: DailyMetric?) -> String {
-        let hrv = d?.avgHrv.map { String(localized: "\(Int($0.rounded())) ms") } ?? " - ms"
-        let rhr = d?.restingHr.map { "\($0)" } ?? "—"
-        return String(localized: "HRV \(hrv) · RHR \(rhr)")
     }
 
     private func sleepValue(_ d: DailyMetric?) -> String {
@@ -5747,7 +5682,7 @@ private struct StrapSyncRow: View {
                             .multilineTextAlignment(.trailing)
                             .fixedSize(horizontal: false, vertical: true)
                     } else if let at = live.lastSyncedAt {
-                        Text("History synced \(relativeAgo(at, now: context.date.timeIntervalSince1970))")
+                        Text(String(localized: "History synced \(relativeAgo(at, now: context.date.timeIntervalSince1970))"))
                             .font(StrandFont.captionNumber)
                             .foregroundStyle(StrandPalette.textSecondary)
                     } else {
@@ -5815,7 +5750,7 @@ private struct StrapBatteryRow: View {
                     Image(systemName: symbol(pct))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(tint(pct))
-                    Text("\(Int(pct.rounded()))%")
+                    Text(String(localized: "\(Int(pct.rounded()))%"))
                         .font(StrandFont.captionNumber)
                         .foregroundStyle(StrandPalette.textSecondary)
                     // The runtime estimate sits beside the %, dimmer, only when we have a trusted one.
@@ -5829,7 +5764,7 @@ private struct StrapBatteryRow: View {
                     }
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Strap battery \(Int(pct.rounded())) percent\(live.charging == true ? ", charging" : "")\(estimateText.map { ", \($0)" } ?? "")")
+                .accessibilityLabel(String(localized: "Strap battery \(Int(pct.rounded())) percent\(live.charging == true ? ", charging" : "")\(estimateText.map { ", \($0)" } ?? "")"))
             }
         }
     }

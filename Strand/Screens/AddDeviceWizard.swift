@@ -212,7 +212,7 @@ struct AddDeviceWizard: View {
             Button("Not now", role: .cancel) { finishAdd(makeActive: false) }
             Button("Make active") { finishAdd(makeActive: true) }
         } message: {
-            Text("Make \(confirmName) your active device now? It will provide your live data. You can change this any time.")
+            Text(String(localized: "Make \(confirmName) your active device now? It will provide your live data. You can change this any time."))
         }
         // The SECOND irreversible gate (after the consent tick): the destructive "Take over this ring?"
         // confirm. Tapping Take over grants adopt consent + registers the ring active (the live source then
@@ -461,7 +461,7 @@ struct AddDeviceWizard: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(StrandPalette.accent)
-                .accessibilityLabel("Scan for \(typeTitle(type))")
+                .accessibilityLabel(String(localized: "Scan for \(typeTitle(type))"))
             }
         }
     }
@@ -1229,6 +1229,10 @@ struct AddDeviceWizard: View {
     }
 
     private func startScan(for type: DeviceType) {
+        // #221: this wizard IS an explicit pairing screen, so it opens the pairing window — the one state
+        // in which Nutry may search without an associated strap. `stopAllScans` closes it again, and the
+        // window never connects anything on its own: the list only lists, and `finishAdd` associates.
+        NutryWhoopPairingGate.openPairingWindow()
         switch type {
         case .whoop4, .whoop5mg: model.presentWhoopScan(model: type.whoopModel ?? .whoop4)
         case .gymEquipment:      ftmsScanner.scan()
@@ -1245,6 +1249,7 @@ struct AddDeviceWizard: View {
         ftmsScanner.stopScan()
         huamiScanner.stopScan()
         ouraScanner.stop()
+        NutryWhoopPairingGate.closePairingWindow()   // #221: la recherche s’arrête avec l’écran
     }
 
     /// Build the right `PairedDevice` for the chosen path, register it, optionally activate, then close.
@@ -1728,7 +1733,7 @@ private struct DiscoveredRow: View {
             .frostedCardSurface(cornerRadius: 12)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(name), signal \(SignalBars.level(for: rssi)) of 4")
+        .accessibilityLabel(String(localized: "\(name), signal \(SignalBars.level(for: rssi)) of 4"))
     }
 }
 

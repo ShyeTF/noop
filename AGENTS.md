@@ -3,7 +3,9 @@
 Guidance for anyone (human or AI agent) submitting a pull request. This is the high-signal map;
 [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) is the full guide (BLE safety contract, design-system
 rules, add-a-metric/screen/command recipes), [`docs/BUILD.md`](docs/BUILD.md) covers signing/pairing,
-and [`docs/IOS.md`](docs/IOS.md) covers the iOS target. Read this first; follow the links for depth.
+[`docs/IOS.md`](docs/IOS.md) covers the iOS target, and [`docs/SCOPE.md`](docs/SCOPE.md) names the
+specific WHOOP-app features that stay out of scope (and their local equivalents). Read this first;
+follow the links for depth.
 
 ## What NOOP is (and the hard scope limits)
 
@@ -110,6 +112,8 @@ Versions are pinned by the repo — install these before the loops below:
 cd Packages/WhoopProtocol && swift build && swift test     # also OuraProtocol
 # Android JVM unit tests (run on Linux/macOS, no device):
 cd android && ./gradlew testFullDebugUnitTest              # add --tests "com.noop.…" to filter
+# After a branch switch, ALWAYS: --no-build-cache --rerun-tasks. Gradle can otherwise serve
+# generated sources (Room/KSP) from the previous branch and fail classes you never touched.
 cd android && ./gradlew compileFullDebugKotlin             # compile the whole app module
 # macOS app (needs Xcode on macOS):
 xcodegen generate && xcodebuild -project Strand.xcodeproj -scheme Strand \
@@ -120,11 +124,12 @@ xcodegen generate && xcodebuild -project Strand.xcodeproj -scheme Strand \
 | Workflow | Covers | Runner | Default state |
 |---|---|---|---|
 | `swift-packages.yml` | TWO jobs. `test`: `swift test` over **`Packages/**`** (WhoopProtocol, WhoopStore, StrandAnalytics, StrandImport, StrandDesign, NoopLocalAccess). `tools`: `swift build` + `swift test` over **`Tools/SleepBench`, `Tools/SleepPSG`, `Tools/Backfill`** — Backfill has no test target, so it is build-only. Path-filtered to those directories. | macos-15 | **active** |
-| `app-build.yml` | Builds the **app targets** (`Strand` macOS + `NOOPiOS` iOS) **and runs `StrandTests`** on the macOS/`Strand` leg only — the iOS leg is compile-only. iOS leg needs **macos-26** (iOS 26 SDK / `glassEffect`). | macos-15 / macos-26 | **disabled** (on-demand) |
+| `app-build.yml` | Builds the **app targets** (`Strand` macOS + `NOOPiOS` iOS) **and runs `StrandTests`** on the macOS/`Strand` leg only — the iOS leg is compile-only. iOS leg needs **macos-26** (iOS 26 SDK / `glassEffect`). | macos-15 / macos-26 | **active** — auto-runs on PRs touching its paths (`Strand/**`, `StrandTests/**`, `StrandiOS*/**`, `NOOPWatch*/**`, `Packages/**`, `project.yml`). NO push trigger, so a direct commit to `main` needs a manual dispatch. |
 | `android.yml` | `assembleFullDebug` + `testFullDebugUnitTest` | ubuntu | **active**, path-filtered to `android/**` |
 | `source-hygiene.yml` | Doc comments that bind to nothing (`Tools/doc_comment_lint.py`) | ubuntu | **active** |
 | `i18n-coverage.yml` | Diff-scoped translation gate (`Tools/i18n_audit.py --ci`) | ubuntu | **active** |
-| `tools-python.yml` | `unittest discover` over `Tools/` and `Tools/linux-capture` | ubuntu | **active**, path-filtered |
+| `tools-python.yml` | `unittest discover` over `Tools/` and `Tools/linux-capture` | ubuntu | **active**, NO path filter. The core `Tools/` suites assert on product source (`test_home_i18n.py` reads `TodayScreen.kt`, `AppModel.swift`, the xcstrings catalogues), so no path list describes its inputs. Runs on every PR and every push to `main`. |
+| `tools-python-windows.yml` | The `Tools/linux-capture` tests a second time, under legacy Windows console encodings | windows | **active**, path-filtered to `Tools/linux-capture/**`. Those tests read nothing outside their own package, and the runner bills at twice a Linux minute. |
 | `prune-stale-branches.yml` | Deletes branches whose PR merged or closed unmerged | ubuntu | **active**, weekly + dispatch |
 | `fork-testing-build.yml` / `fork-release.yml` | Staging / release builds (apk + mac + ios) | — | on dispatch |
 

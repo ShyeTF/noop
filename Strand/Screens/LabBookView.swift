@@ -120,7 +120,7 @@ struct LabBookView: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(countLine).font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
-                        Text("All stays on \(Platform.deviceNounPhrase). Nothing is sent anywhere.")
+                        Text(String(localized: "All stays on \(Platform.deviceNounPhrase). Nothing is sent anywhere."))
                             .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                     }
                     Spacer(minLength: 8)
@@ -180,7 +180,7 @@ struct LabBookView: View {
                     Text("Import readings").font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
                     Spacer(minLength: 8)
                 }
-                Text("Bring in a markers CSV (date, marker, value, unit). Names that match the catalog fold onto your existing markers; anything else comes in as a custom marker. Rows that can't be read are skipped and counted, never guessed. Everything you import stays on \(Platform.deviceNounPhrase).")
+                Text(String(localized: "Bring in a markers CSV (date, marker, value, unit). Names that match the catalog fold onto your existing markers; anything else comes in as a custom marker. Rows that can't be read are skipped and counted, never guessed. Everything you import stays on \(Platform.deviceNounPhrase)."))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -325,7 +325,7 @@ struct LabBookView: View {
                 Text("Keep your own numbers here")
                     .font(StrandFont.headline)
                     .foregroundStyle(StrandPalette.textPrimary)
-                Text("Type in a blood-pressure reading or a cholesterol value from your last appointment. It stays on \(Platform.deviceNounPhrase), and over time you'll see how it lines up with your sleep, heart rate and recovery.")
+                Text(String(localized: "Type in a blood-pressure reading or a cholesterol value from your last appointment. It stays on \(Platform.deviceNounPhrase), and over time you'll see how it lines up with your sleep, heart rate and recovery."))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -404,14 +404,14 @@ struct LabBookView: View {
         // opening a marker's detail feels physical (replaces the flat .plain style).
         .buttonStyle(LiquidPressStyle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(displayName(for: key)), latest \(latestLabel(latest, key: key)), \(series.count) readings")
+        .accessibilityLabel(String(localized: "\(displayName(for: key)), latest \(latestLabel(latest, key: key)), \(series.count) readings"))
     }
 
     // MARK: - Disclaimer (always visible footnote + link)
 
     private var disclaimerNote: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Lab Book is a private notebook, not a medical service. NOOP stores and lines up the numbers you enter. It doesn't test, read, diagnose, or advise. Your records never leave \(Platform.deviceNounPhrase); there's no account or cloud, so it isn't \"HIPAA-covered.\" Always rely on your doctor or pharmacist to interpret results.")
+            Text(String(localized: "Lab Book is a private notebook, not a medical service. NOOP stores and lines up the numbers you enter. It doesn't test, read, diagnose, or advise. Your records never leave \(Platform.deviceNounPhrase); there's no account or cloud, so it isn't \"HIPAA-covered.\" Always rely on your doctor or pharmacist to interpret results."))
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -728,7 +728,7 @@ private struct MarkerDetailView: View {
                     }
 
                     if signal == nil {
-                        Text("Pick a wearable signal (resting HR, HRV, sleep, Charge, weight…) to line it up against this marker. NOOP averages the signal over the \(window.phrase) before each reading.")
+                        Text(String(localized: "Pick a wearable signal (resting HR, HRV, sleep, Charge, weight…) to line it up against this marker. NOOP averages the signal over the \(window.phrase) before each reading."))
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -788,7 +788,7 @@ private struct MarkerDetailView: View {
         } else if let c = correlation {
             pairResult(c, n: n)
         } else {
-            Text("\(n) readings line up, but there isn't enough variation to compute a relationship.")
+            Text(String(localized: "\(n) readings line up, but there isn't enough variation to compute a relationship."))
                 .font(StrandFont.subhead)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -812,7 +812,7 @@ private struct MarkerDetailView: View {
                     .lineLimit(2)
                 Spacer(minLength: 6)
                 TrendChip(text: LabBookSignals.signedR(c.r), color: tint)
-                Text("r = \(LabBookSignals.signedR(c.r))")
+                Text(String(localized: "r = \(LabBookSignals.signedR(c.r))"))
                     .font(StrandFont.number(18))
                     .foregroundStyle(tint)
             }
@@ -827,7 +827,7 @@ private struct MarkerDetailView: View {
             LiquidTube(frac: min(abs(c.r), 1), tint: tint, height: 8, animated: false)
                 .accessibilityHidden(true)
             // The mandatory clause for markers (spec §"On-device algorithm").
-            Text("\(n) readings used · \(LabBookSignals.strengthWord(c.r)) \(LabBookSignals.directionWord(c.r)) association. This is your own data sitting side by side. It's not a medical finding, and it shows association, not cause.")
+            Text(String(localized: "\(n) readings used · \(LabBookSignals.strengthWord(c.r)) \(LabBookSignals.directionWord(c.r)) association. This is your own data sitting side by side. It's not a medical finding, and it shows association, not cause."))
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

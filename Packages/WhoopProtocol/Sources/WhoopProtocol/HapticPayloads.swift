@@ -9,10 +9,13 @@ import Foundation
 /// test suites. All multi-byte fields are little-endian. Revision values: REVISION_1=1,
 /// REVISION_2=2, REVISION_4=4.
 ///
-/// EXPERIMENTAL / UNCONFIRMED (same posture as the Android client): unlike the maverick buzz
-/// (hardware-confirmed on a real MG), the rev4 alarm layout is self-consistent and arming has
-/// been ACKed on hardware, but a strap-driven wake fire has NOT been captured on our side
-/// (no STRAP_DRIVEN_ALARM_EXECUTED event observed yet).
+/// EXPERIMENTAL on 5/MG: unlike the maverick buzz (hardware-confirmed on a real MG), the rev4
+/// alarm layout is self-consistent and arming has been ACKed on hardware. One full wake chain has
+/// since been captured on an MG, STRAP_DRIVEN_ALARM_EXECUTED (57) then HAPTICS_FIRED (60)
+/// (#864, 2026-08-25), with a second wake reported on a 5.0 without a log (#2464). Neither has been
+/// shown to repeat, so the UI must not promise a wake — but the arm command is still sent when the
+/// user enables the alarm (a silent "not armed" gate left the strap idle while the UI showed a next
+/// vibration).
 
 /// The canonical WHOOP waveform-effect pair, used by both the notification buzz and the wake alarm.
 private let waveformEffects: [UInt8] = [47, 152, 0, 0, 0, 0, 0, 0]
@@ -64,6 +67,19 @@ public enum AlarmPayload {
                 UInt8(subseconds & 0xFF), UInt8((subseconds >> 8) & 0xFF)]
             + waveformEffects
             + [0x00, 0x00, 0x07, 30]   // loopControl u16 LE, overallLoop=7, duration=30 s
+    }
+
+    /// SET_ALARM_TIME (cmd 66) REVISION_1 body — WHOOP 4.0. Absolute UTC epoch seconds, LE.
+    /// Layout matches the official-app wire capture (#535): `[0x01][u32 LE epoch][u16 0][u16 0]`.
+    /// Minute precision (subseconds always 0). Twin of the historical `WhoopCommand.setAlarmPayload`.
+    public static func setAlarmRev1(epochSec: UInt32) -> [UInt8] {
+        [0x01,
+         UInt8(epochSec & 0xFF),
+         UInt8((epochSec >> 8) & 0xFF),
+         UInt8((epochSec >> 16) & 0xFF),
+         UInt8((epochSec >> 24) & 0xFF),
+         0x00, 0x00, // subseconds
+         0x00, 0x00] // haptic-mode field
     }
 
     /// DISABLE_ALARM (cmd 69) REVISION_2 body `[0x02, 0xFF]` (the 5/MG form).

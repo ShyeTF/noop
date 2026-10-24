@@ -153,7 +153,7 @@ struct NotificationSettingsView: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .tint(StrandPalette.accent)
-                .accessibilityLabel("\(app.name) wrist alerts")
+                .accessibilityLabel(String(localized: "\(app.name) wrist alerts"))
         }
         .frame(minHeight: 42)
         .padding(.vertical, 4)
@@ -221,7 +221,7 @@ struct NotificationSettingsView: View {
         .tint(StrandPalette.accent)
         .disabled(!live.bonded)
         .help(live.bonded ? "Test \(app.name) buzz" : "Connect your strap to test")
-        .accessibilityLabel("Test \(app.name) buzz")
+        .accessibilityLabel(String(localized: "Test \(app.name) buzz"))
         .accessibilityHint(live.bonded ? "Fires a test buzz on your strap" : "Connect your strap to enable")
     }
 

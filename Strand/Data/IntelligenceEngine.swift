@@ -46,6 +46,8 @@ final class IntelligenceEngine: ObservableObject {
     /// `defer` re-invokes `analyzeRecent(force: true)` ONCE when it clears. A single re-arm (the flag is
     /// cleared BEFORE the re-invoke) bounds it to one extra pass , no recompute storm.
     private var pendingForcedRescore = false
+    /// Set before the first await so a second caller cannot enter while the fingerprint is still loading.
+    private var admissionLocked = false
     /// Uptime the pass holding `computing` started at, and how many days it covers; nil when none is running.
     private var runningPassStart: UInt64?
     private var runningPassDays = 0
@@ -399,7 +401,28 @@ final class IntelligenceEngine: ObservableObject {
         return dayStart < nowLocalMidnight ? nextMidnight : min(nextMidnight, now)
     }
 
-    /// Counts + a window length only — same privacy class as the sibling `sleep day=` line, no PII. Pure so
+    /// The provided session the NO-NIGHT line reports as `providedLongest` / `providedLongestEnd`: the
+    /// longest, ties broken by the later END.
+    ///
+    /// The tie-break is the point. Selecting on duration alone left the OUTPUT undefined whenever two
+    /// sessions ran the same length, because `Array.max(by:)` and Kotlin's `maxByOrNull` do not agree on
+    /// which of two equal elements they keep, and the field actually printed is the END day. Two equal
+    /// sessions ending on different days would then render differently on the two platforms from
+    /// identical input, on a line whose whole contract is being byte-identical across them.
+    ///
+    /// Equal-length sessions are not a corner case: the HR-only spine works in fixed epochs, so
+    /// durations are quantised and repeat. Ordering by (duration, end) makes any surviving tie one where
+    /// both printed fields are equal anyway, so the output is deterministic even where the choice of
+    /// element is not.
+    ///
+    /// Pure and `nonisolated` so both the picked duration and its day key are unit-tested directly;
+    /// byte-identical twin of the Kotlin `longestProvidedForDiag`.
+    nonisolated static func longestProvidedForDiag(_ sessions: [SleepSession]) -> SleepSession? {
+        return sessions.max(by: { ($0.end - $0.start, $0.end) < ($1.end - $1.start, $1.end) })
+    }
+
+    /// Counts, a window length and day keys only — same privacy class as the sibling `sleep day=` line,
+    /// no PII. Pure so
     /// it's unit-tested directly; byte-identical to the Android `sleepDetectNoNightLogLine`.
 /// Fold the per-day diagnostic lines onto the one channel that already replays them.
     ///
@@ -415,7 +438,10 @@ final class IntelligenceEngine: ObservableObject {
 
     nonisolated static func sleepDetectNoNightLogLine(day: String, hrCount: Int, rrCount: Int,
                                                       respCount: Int, gravCount: Int, stepCount: Int,
-                                                      providedCount: Int, windowHours: Int,
+                                                      providedCount: Int, providedEndingOnDay: Int,
+                                                      providedLongestMin: Int?,
+                                                      providedLongestEndDay: String?,
+                                                      windowHours: Int,
                                                       skinCount: Int) -> String {
         // `reason` names WHICH absence this is, because grav=0 is printed but its consequence is not.
         //
@@ -476,8 +502,38 @@ final class IntelligenceEngine: ObservableObject {
         if gravCount >= StreamReadCap.gravity { atCap.append("grav") }
         if skinCount >= StreamReadCap.skin { atCap.append("skin") }
         let capNote = atCap.isEmpty ? "" : " atCap=" + atCap.joined(separator: ",")
+        // WHERE the provided sessions fall, which `provided=` alone does not say and which is the next
+        // question every time this line reads `no-motion-provided-unused`.
+        //
+        // A session is attributed to a day by where it ENDS (`AnalyticsEngine.analyzeDay`, the
+        // `tsInDay(it.end)` filter), so `provided=3` with an empty night means those three ended
+        // somewhere else. Without that, the line stops one field short of its own conclusion: a real
+        // 5/MG capture showed `provided=3` beside an HR-only spine reporting a 240-minute session, on a
+        // night the wearer demonstrably slept, and a reader still could not tell whether the spine had
+        // missed the night or the attribution had moved it. Those two want opposite fixes.
+        //
+        // `providedHere` is the count that DID end on this day, and is therefore the number the night
+        // was built from: seeing 0 next to a non-zero `provided` is the whole diagnosis. The longest
+        // session and its end day come along because the longest is the one that should have matched,
+        // and naming its day says which neighbour absorbed it.
+        //
+        // Self-checking on purpose: `providedLongestEnd` equal to `day` while `providedHere` is 0 is a
+        // contradiction, and points at the filter rather than at the spine.
+        //
+        // Only when something was actually provided. With `provided=0` the three fields say nothing
+        // that `reason=no-motion` has not already said, and the sibling `atCap` note sets the precedent
+        // for a suffix that appears only when it carries information.
+        let providedNote: String
+        if providedCount > 0 {
+            providedNote = " providedHere=\(providedEndingOnDay)"
+                + " providedLongest=\(providedLongestMin.map(String.init) ?? "nil")"
+                + " providedLongestEnd=\(providedLongestEndDay ?? "nil")"
+        } else {
+            providedNote = ""
+        }
         return "sleep-detect day=\(day) NO-NIGHT hr=\(hrCount) rr=\(rrCount) resp=\(respCount) "
-            + "grav=\(gravCount) skin=\(skinCount) steps=\(stepCount) provided=\(providedCount) "
+            + "grav=\(gravCount) skin=\(skinCount) steps=\(stepCount) provided=\(providedCount)"
+            + providedNote + " "
             + "window=\(windowHours)h reason=\(reason)" + capNote
     }
 
@@ -683,7 +739,7 @@ final class IntelligenceEngine: ObservableObject {
         // in-flight pass already covers the same window). But a FORCED call is a real update path (a
         // post-backfill rescore after a sync) , dropping it would leave a freshly-synced night unscored
         // until the next cycle. Re-arm instead: flag it so the running pass's `defer` re-invokes once.
-        guard !computing else {
+        guard !computing, admissionLocked == false else {
             if force {
                 // Said once per running pass, not per trigger: a pass that holds the lock for hours otherwise
                 // turns every post-offload re-score into a silent no-op, and the log shows syncs but no scores.
@@ -695,6 +751,22 @@ final class IntelligenceEngine: ObservableObject {
             }
             return
         }
+        // Take the lock before the first await. Two foreground entries (launch task, then `.active`)
+        // otherwise both pass `!computing` while the store read is suspended.
+        admissionLocked = true
+        var passStarted = false
+        defer {
+            admissionLocked = false
+            if passStarted {
+                computing = false
+                runningPassStart = nil
+            }
+            if pendingForcedRescore {
+                pendingForcedRescore = false
+                Task { await self.analyzeRecent(maxDays: maxDays, force: true) }
+            }
+        }
+        await Task.yield()
         guard let store = await repo.storeHandle() else { note = String(localized: "No on-device store yet."); return }
         guard let hrvCfg = Baselines.metricCfg["hrv"],
               let rhrCfg = Baselines.metricCfg["resting_hr"],
@@ -776,6 +848,7 @@ final class IntelligenceEngine: ObservableObject {
         let reScoreCPUStart = RescoreBackgroundScheduler.processCPUSeconds()
         let reScoreExpiriesAtStart = RescoreBackgroundScheduler.assertionExpiries
         computing = true
+        passStarted = true
         runningPassStart = reScoreStart
         runningPassDays = maxDays
         // #1538: the pass is now past every gate and will do real work. Mark it started durably, so that a
@@ -796,22 +869,9 @@ final class IntelligenceEngine: ObservableObject {
         // Kotlin post-offload gate makes the same point in its own words: "captured before the run,
         // written only on success".
         let owedToken = RescoreBackgroundScheduler.markRescoreOwed(passStarting: true)
-        // #899-A re-arm: clear the lock, then if a forced rescore was dropped while this pass held it,
-        // run it ONCE. The flag is cleared BEFORE the re-invoke (a single re-arm), so a forced call landing
-        // DURING the re-invoke re-arms it again but a quiet one does not , this can never recurse unbounded.
-        // The re-invoke is launched on a fresh `Task` because `defer` is synchronous; by the time it runs
-        // `computing` is already false, so its own `guard !computing` passes and it rescores the new data.
-        defer {
-            computing = false
-            runningPassStart = nil
-            if pendingForcedRescore {
-                pendingForcedRescore = false
-                // Carry THIS pass's window into the re-pass: a heal firing during a wide one-shot pass
-                // must re-score the same width, not the default 21 days (Kotlin re-passes with the same
-                // maxDays; keep the platforms in lockstep).
-                Task { await self.analyzeRecent(maxDays: maxDays, force: true) }
-            }
-        }
+        // #899-A re-arm lives in the defer registered with the lock above. It clears the lock, then if a
+        // forced rescore was dropped while this pass held it, runs it ONCE. The flag is cleared BEFORE the
+        // re-invoke, so a forced call landing DURING the re-invoke re-arms it again but a quiet one does not.
 
         let up = UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm,
                              age: Double(profile.age), sex: profile.sex,
@@ -907,7 +967,7 @@ final class IntelligenceEngine: ObservableObject {
         let (habitualMidsleepSec, nightlyHours) = await Self.computeHabitualSleep(
             store: store, importedId: deviceId, computedId: deviceId + "-noop",
             windowStart: nowLocalMidnight - maxDays * 86_400 - StreamReadCap.lookbackSeconds,
-            windowEnd: now, offsetSec: tzOffset)
+            windowEnd: now, finishedBefore: nowLocalMidnight, offsetSec: tzOffset)
         // Wave 0 (SL1/T1): personal sleep REGULARITY + population-anchored NEED, computed ONCE from the
         // trailing per-night durations and threaded to every analyzeDay below (mirrors the midsleep
         // learner just above — one personal trait per run, applied to the whole re-scored history so
@@ -999,6 +1059,8 @@ final class IntelligenceEngine: ObservableObject {
         // But that is CORRECT invalidation, not churn to be quantized away — a night going from
         // half-loaded to complete really does change what every day should be scored against, and the
         // swings are large rather than drift, so no tolerance both preserves scores and stops the drop.
+        // What stops the churn instead is learning only from nights that finished before today
+        // (`computeHabitualSleep(finishedBefore:)`): the night still being synced was the one moving.
         // What keeps it affordable is that the post-backfill re-score is COALESCED on both platforms: iOS
         // debounces `lastSyncedAt` by 2 s (#755), Android gates on `analyzeAfterBackfillScheduled` plus a
         // trailing delay. So this fires once per completed backfill, not once per chunk. That coalescing is
@@ -1241,7 +1303,9 @@ final class IntelligenceEngine: ObservableObject {
                 // register on the right scale (5/MG banks centidegrees, a WHOOP 4.0 v24 banks a raw ADC). The
                 // registry knows each device's model; unknown/non-WHOOP owners fall back to `.whoop5` (the prior
                 // /100 behaviour), so this only changes the mapping for a device positively identified as a 4.0.
-                let skinFamily = Self.skinTempFamily(forOwner: owner, devices: regDevices)
+                let skinFamily = SkinTempPacket.family(
+                    samples: skin,
+                    registry: Self.skinTempFamily(forOwner: owner, devices: regDevices))
                 // #1467: the worn-gate timestamp tolerance for this owner (0 for WHOOP, byte-identical).
                 let skinWornToleranceSec = Self.skinTempWornToleranceSec(forOwner: owner, devices: regDevices)
                 // #938 (second capture): learn THIS device's worn skin-temp anchor raw ONCE, WINDOW-WIDE (the
@@ -1397,12 +1461,12 @@ final class IntelligenceEngine: ObservableObject {
                     let stored = persisted.compactMap { AnalyticsEngine.sleepSession(fromProvided: $0) }
                     if owner != Repository.whoopSource, !stored.isEmpty {
                         traceSink?(SleepStager.GateTrace.hrOnlyGateLine(
-                            attempted: false, reason: "stored-hypnogram",
+                            day: day, attempted: false, reason: "stored-hypnogram",
                             gravRows: grav.count, storedNights: stored.count))
                         providedSleep = stored
                     } else if !stored.isEmpty {
                         traceSink?(SleepStager.GateTrace.hrOnlyGateLine(
-                            attempted: false, reason: "stored-sessions-exist",
+                            day: day, attempted: false, reason: "stored-sessions-exist",
                             gravRows: grav.count, storedNights: stored.count))
                         providedSleep = []
                     } else {
@@ -1411,9 +1475,9 @@ final class IntelligenceEngine: ObservableObject {
                         // check previously blocked it. A normal 4.0 day is untouched — it streams
                         // gravity, so it never reaches this gate.
                         traceSink?(SleepStager.GateTrace.hrOnlyGateLine(
-                            attempted: true, reason: "no-motion-no-hypnogram",
+                            day: day, attempted: true, reason: "no-motion-no-hypnogram",
                             gravRows: grav.count, storedNights: 0))
-                        providedSleep = SleepStager.hrOnlySessions(hr: hr, rr: rr, resp: resp,
+                        providedSleep = SleepStager.hrOnlySessions(day: day, hr: hr, rr: rr, resp: resp,
                                                                    traceSink: traceSink)
                     }
                 } else {
@@ -1471,7 +1535,12 @@ final class IntelligenceEngine: ObservableObject {
                 // shipped windowed avgHrv. Built here (loop 1) where `rr` is in scope, but EMITTED in the
                 // main-actor replay loop below (diagnosticSink is main-actor isolated), carried on `hrvDiag`.
                 // Byte-identical to the Kotlin line.
-                let sleepRrRows = rr.filter { r in res.cachedSleep.contains { r.ts >= $0.startTs && r.ts < $0.endTs } }
+                // #2425: the MAIN night the #1118 gate judged, not every session of the day pooled over the
+                // gaps between them; see `AnalyticsEngine.hrvDiagnosticRows`. `hrvOverCounted` and the RSA
+                // resp gate below read the same rows, so they now agree with the gate too.
+                let sleepRrRows = AnalyticsEngine.hrvDiagnosticRows(
+                    rr, mainNight: res.mainNightBlocks,
+                    fallback: res.cachedSleep.map { SleepStageTotals.NightBlock(start: $0.startTs, end: $0.endTs) })
                 let sleepRr = sleepRrRows.map { Double($0.rrMs) }
                 let hrvDiag: String?
                 let hrvOverCounted: Bool?   // #1118: nil = no in-sleep R-R (no HRV to caveat)
@@ -1491,10 +1560,22 @@ final class IntelligenceEngine: ObservableObject {
                         // from/to are Int unix seconds; the span is always a whole-hour multiple
                         // (30 h + 24 h, or 30 h + 18 h), so integer division is exact. Matches Kotlin.
                         let windowHours = (to - from) / 3_600
+                        // Attribute each provided session the same way `analyzeDay` does — by the LOCAL
+                        // day its END falls in — so this line and the filter that emptied the night agree
+                        // by construction rather than by two readings of the same rule.
+                        let longestProvided = Self.longestProvidedForDiag(providedSleep)
                         hrvDiag = Self.sleepDetectNoNightLogLine(
                             day: day, hrCount: hr.count, rrCount: rr.count, respCount: resp.count,
                             gravCount: grav.count, stepCount: steps.count,
-                            providedCount: providedSleep.count, windowHours: windowHours,
+                            providedCount: providedSleep.count,
+                            providedEndingOnDay: providedSleep.filter {
+                                AnalyticsEngine.dayString($0.end, offsetSec: tzOffset) == day
+                            }.count,
+                            providedLongestMin: longestProvided.map { ($0.end - $0.start) / 60 },
+                            providedLongestEndDay: longestProvided.map {
+                                AnalyticsEngine.dayString($0.end, offsetSec: tzOffset)
+                            },
+                            windowHours: windowHours,
                             skinCount: skin.count)
                     } else {
                         hrvDiag = nil
@@ -2795,8 +2876,16 @@ final class IntelligenceEngine: ObservableObject {
         // re-read as `providedSleep` and re-detected every pass, so one night ballooned to 14 rows / 9
         // "naps". Dedup each device's rows AMONG THEMSELVES and delete stale copies under that SAME id
         // (never across ids, so a survivor is never orphaned under an id the day-owner read skips).
-        // `freshStarts` (this pass's computed bank witness) only matches the computedId rows; the others
-        // fall back to longest-wins, the read-side dedup's own default. Sorted for a deterministic order.
+        // `freshStarts` (this pass's computed bank witness) is handed ONLY to the computedId sweep; every
+        // other id falls back to longest-wins, the read-side dedup's own default. It used to be passed to
+        // every id on the claim that it "only matches the computedId rows" — false on an Oura day, where the
+        // pass's sessions ARE the ring's `providedSleep` rows with `startTs` copied verbatim. The ring row
+        // the pass had READ was then ranked "fresh" in the ring's own sweep and outranked every fuller
+        // re-serve the ring banked while the pass was in flight (hours, when iOS suspends the app between
+        // the read and this heal): on 09-19/20 the heal deleted the 598-min full night one second after it
+        // landed and kept the 337-min row read at 04:14, so the day ended at 04:48 instead of 08:21.
+        // `SleepSessionDedup.healWitness` is the one shared rule (twin of Kotlin's). Sorted for a
+        // deterministic order.
         let healDeviceIds = Self.healDeviceIds(computedId: computedId, registeredIds: regDevices.map { $0.id })
         // Compact shape of a row for the #1284 heal log — the two measures that adjudicate WHICH copy is
         // fuller (stage-segment count + decoded JSON length), in the SAME format as the dup-gen diagnostic
@@ -2814,7 +2903,8 @@ final class IntelligenceEngine: ObservableObject {
             let healable = storedSessions.filter {
                 (oldestDay...newestDay).contains(AnalyticsEngine.dayString($0.endTs, offsetSec: tzOffset))
             }
-            let sweep = SleepSessionDedup.dedupe(healable, freshStarts: keptStarts)
+            let witness = SleepSessionDedup.healWitness(for: healId, computedId: computedId, keptStarts: keptStarts)
+            let sweep = SleepSessionDedup.dedupe(healable, freshStarts: witness)
             for stale in sweep.dropped {
                 _ = try? await store.deleteSleepSession(deviceId: healId, startTs: stale.startTs)
                 // #1284: log which copy was dropped and which survived, so the corpus can confirm the heal
@@ -3345,9 +3435,18 @@ final class IntelligenceEngine: ObservableObject {
     /// naps drop out. One read serves both the main-night midsleep learner (#547) and the personal
     /// sleep-need + regularity that thread into `analyzeDay` (Wave 0 · SL1/T1). The midsleep result is
     /// byte-identical to before; the nightly-hours output is the Swift-side extension.
-    private static func computeHabitualSleep(
+    ///
+    /// Only sessions that ended before `finishedBefore` (the pass's local midnight) are learned from. Tonight's
+    /// session is re-banked by every sync while it is still growing, and each time it moved the learned
+    /// consistency and midsleep, so every pass through a morning found the day-cache signature changed and
+    /// re-scored all 21 nights from scratch. On a backgrounded phone that turned a seconds-long pass into
+    /// hours (a field log: 8 813 s and 2 345 s, back to back). A night still being slept is not a habit yet;
+    /// it joins the history the day after, once, when the window rolls anyway.
+    ///
+    /// Internal rather than private only so a test can drive the `finishedBefore` cutoff directly.
+    static func computeHabitualSleep(
         store: WhoopStore, importedId: String, computedId: String,
-        windowStart: Int, windowEnd: Int, offsetSec: Int
+        windowStart: Int, windowEnd: Int, finishedBefore: Int, offsetSec: Int
     ) async -> (midsleepSec: Int?, nightlyHours: [Double]) {
         let imported = (try? await store.sleepSessions(deviceId: importedId, from: windowStart,
                                                        to: windowEnd, limit: 4000)) ?? []
@@ -3359,7 +3458,7 @@ final class IntelligenceEngine: ObservableObject {
         // then steered the main-night pick (day assignment) to the stale block. The same collapse also
         // covers an imported night and its computed twin (the longest capture wins, exactly what the
         // per-day length rule chose anyway).
-        let merged = SleepSessionDedup.dedupe(imported + computed).kept
+        let merged = SleepSessionDedup.dedupe(imported + computed).kept.filter { $0.endTs < finishedBefore }
         // Longest block per LOCAL day (naps drop out), chosen by in-bed SPAN — reused for BOTH the
         // midsleep learner and the per-night durations (Wave 0 · SL1/T1), so the two can never read a
         // different history. For the DURATIONS we keep TST (span × efficiency), NOT the in-bed span:

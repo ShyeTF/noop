@@ -134,7 +134,7 @@ private struct DevicesContent: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
             .strokeBorder(StrandPalette.statusWarning.opacity(0.5), lineWidth: 1))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Reconnect help: \(guide)")
+        .accessibilityLabel(String(localized: "Reconnect help: \(guide)"))
     }
 
     var body: some View {
@@ -298,7 +298,7 @@ private struct DevicesContent: View {
                 switchTarget = nil
             }
         } message: { device in
-            Text("Make \(device.displayName) your active strap? From now on it provides your live data. \(currentActiveName)'s history stays exactly as it is. Only new days come from \(device.displayName).")
+            Text(String(localized: "Make \(device.displayName) your active strap? From now on it provides your live data. \(currentActiveName)'s history stays exactly as it is. Only new days come from \(device.displayName)."))
         }
         // Rename
         .alert("Rename device",
@@ -312,7 +312,7 @@ private struct DevicesContent: View {
                 renameTarget = nil
             }
         } message: { device in
-            Text("Give \(device.brand) \(device.model) a name you'll recognise.")
+            Text(String(localized: "Give \(device.brand) \(device.model) a name you'll recognise."))
         }
         // Remove confirm
         .alert("Remove this device?",
@@ -322,7 +322,7 @@ private struct DevicesContent: View {
             Button("Cancel", role: .cancel) { removeTarget = nil }
             Button("Remove", role: .destructive) { confirmRemove(device) }
         } message: { device in
-            Text("Remove \(device.displayName)? NOOP will stop connecting to it. Its recorded data is kept and you can re-add it any time.")
+            Text(String(localized: "Remove \(device.displayName)? NOOP will stop connecting to it. Its recorded data is kept and you can re-add it any time."))
         }
         // Restart strap confirm (#166)
         .alert("Restart this strap?",
@@ -332,7 +332,7 @@ private struct DevicesContent: View {
             Button("Cancel", role: .cancel) { rebootTarget = nil }
             Button("Restart") { model.rebootStrap(); rebootTarget = nil }
         } message: { device in
-            Text("Restart \(device.displayName)? It disconnects for about 30 seconds while it reboots, then reconnects on its own. Your recorded data is kept.")
+            Text(String(localized: "Restart \(device.displayName)? It disconnects for about 30 seconds while it reboots, then reconnects on its own. Your recorded data is kept."))
         }
         // WHOOP 4.0 reboot probe (#235): only reachable with Test Centre → Connection on and a 4.0 connected.
         // Tries each candidate frame one at a time so the strap log shows which one actually reboots.
@@ -397,7 +397,7 @@ private struct DevicesContent: View {
                 deleteDataTarget = nil
             }
         } message: { device in
-            Text("This permanently deletes all data recorded from \(device.displayName). This can't be undone.")
+            Text(String(localized: "This permanently deletes all data recorded from \(device.displayName). This can't be undone."))
         }
         // Hard-delete confirm (reached from a REMOVED card's ⋮ menu): purge the registry entry itself,
         // not just its data — the only way to get a duplicate/stale strap out of the list for good (#1193).
@@ -621,6 +621,12 @@ private struct DevicesContent: View {
         model.ble.forgetDevice(device.peripheralId)
         registry.archive(device.id)
         removeTarget = nil
+        // Nutry clears autoReconnect / onboarded when the registry no longer has an adopted BLE identity
+        // (see NutryWhoopBridge.refreshLinkPhase). Only force a reset when no activatable strap remains.
+        if activatableDevices.isEmpty {
+            NotificationCenter.default.post(
+                name: Notification.Name("NutryWhoopPairingShouldReset"), object: nil)
+        }
         if wasActive {
             // Other ACTIVATABLE devices left → ask which becomes active; otherwise (none left, or only
             // import sources remain) no active device remains and there's nothing to offer (I-1).
@@ -880,10 +886,10 @@ private struct DeviceCard: View {
                     // Firmware version for the active+connected strap, read on connect.
                     if let fw = liveFirmware {
                         Text("·").font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
-                        Text("FW \(fw)")
+                        Text(String(localized: "FW \(fw)"))
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textSecondary)
-                            .accessibilityLabel("Firmware version \(fw)")
+                            .accessibilityLabel(String(localized: "Firmware version \(fw)"))
                     }
                     // #592: strap pack voltage beside the percent, when the battery event has reported it.
                     if let mv = liveBatteryMv {
@@ -895,10 +901,10 @@ private struct DeviceCard: View {
                     }
                     if let layout = liveHistoryLayout {
                         Text("·").font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
-                        Text("v\(layout) history")
+                        Text(String(localized: "v\(layout) history"))
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textSecondary)
-                            .accessibilityLabel("Historical record layout v\(layout)")
+                            .accessibilityLabel(String(localized: "Historical record layout v\(layout)"))
                     }
                     // The whole-card tap hint sits on the left; the ⋮ menu is a bottom-trailing overlay above
                     // the press button (so its own taps win). No hint on the active card (no make-active),
@@ -975,7 +981,7 @@ private struct DeviceCard: View {
                 .foregroundStyle(StrandPalette.textSecondary)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Battery \(pct) percent")
+        .accessibilityLabel(String(localized: "Battery \(pct) percent"))
     }
 
     /// The charge-band colour for the battery tube/icon (mirrors the menu-bar battery buckets).
@@ -1078,7 +1084,7 @@ private struct DeviceCard: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .accessibilityLabel("Device actions for \(device.displayName)")
+        .accessibilityLabel(String(localized: "Device actions for \(device.displayName)"))
     }
 
     /// SF Symbol for the device: WHOOP keeps the band glyph; an FTMS machine reads as gym equipment;
@@ -1337,7 +1343,7 @@ private struct ExtendedBatteryProbeResultView: View {
     }
 }
 
-/// The hard-delete ("Forget device") confirm for an archived row (#1193). Isolated into its own
+/// Confirms releasing a strap ("Forget device") without deleting its recordings. Isolated into its own
 /// ViewModifier — like the probe sheets below — so this extra dialog doesn't push the DevicesContent
 /// body over the iOS Swift type-checker budget. `registry` is threaded in (it's an `@ObservedObject`
 /// param on `DevicesContent`, not an environment object).
@@ -1345,6 +1351,16 @@ private struct ForgetDeviceSheet: ViewModifier {
     @EnvironmentObject var model: AppModel
     @ObservedObject var registry: DeviceRegistry
     @Binding var target: PairedDevice?
+
+    /// Releases the radio and the peripheral identifier. Does not delete recordings.
+    private func releasePairing(_ device: PairedDevice) {
+        let deviceId: String = device.id
+        let peripheral: String? = device.peripheralId
+        model.ble.forgetDevice(peripheral)
+        registry.setPeripheralId(deviceId, peripheralId: nil)
+        NotificationCenter.default.post(
+            name: Notification.Name("NutryWhoopPairingShouldReset"), object: nil)
+    }
 
     func body(content: Content) -> some View {
         content
@@ -1354,18 +1370,11 @@ private struct ForgetDeviceSheet: ViewModifier {
                    presenting: target) { device in
                 Button("Cancel", role: .cancel) { target = nil }
                 Button("Forget device", role: .destructive) {
-                    // Same off-main routing as delete-data: the sample wipe runs on the WhoopStore actor,
-                    // then the registry row is removed and the list reloads. Resolve the store handle
-                    // inside the Task so the main thread never blocks on it.
-                    let deviceId = device.id
-                    Task {
-                        guard let store = await model.repo.storeHandle() else { return }
-                        await registry.forget(deviceId, store: store)
-                    }
+                    releasePairing(device)
                     target = nil
                 }
             } message: { _ in
-                Text("NOOP removes this device from your list and deletes its recorded data here. You can re-pair the strap to pull its recent history back.")
+                Text("The strap is released. Recordings already on this iPhone stay in place. You can pair it again.")
             }
     }
 }

@@ -463,9 +463,14 @@ extension WhoopStore {
             // HRV is scored). `seq` distinguishes equal (ts, rrMs) beats; distinct beats keep seq 0.
             // Android parity: Room v18 (#163). SQLite can't ALTER a PK, so REBUILD — LOSS-LESS: every row
             // copied with seq = 0, exact because the old PK made (deviceId, ts, rrMs) unique per row.
-            // Forward-only: already-dropped beats can't be recovered. rrInterval is a leaf table (no FKs
-            // in or out), so the drop/rename is safe.
-            try db.create(table: "rrInterval_new") { t in
+            // Forward-only: beats already lost before this migration can't be recovered. rrInterval is a
+            // leaf table (no FKs in or out). The previous table is kept under rrInterval_v24_legacy.
+            let existing = try db.columns(in: "rrInterval").map(\.name)
+            if existing.contains("seq") { return }
+            // Nutry: a rebuild must not discard beats. The pre-seq table is renamed and kept;
+            // the widened table receives a full copy. Already-applied installs do not re-run this id.
+            try db.rename(table: "rrInterval", to: "rrInterval_v24_legacy")
+            try db.create(table: "rrInterval") { t in
                 t.column("deviceId", .text).notNull()
                 t.column("ts", .integer).notNull()
                 t.column("rrMs", .integer).notNull()
@@ -474,11 +479,9 @@ extension WhoopStore {
                 t.primaryKey(["deviceId", "ts", "rrMs", "seq"])
             }
             try db.execute(sql: """
-                INSERT INTO rrInterval_new (deviceId, ts, rrMs, seq, synced)
-                SELECT deviceId, ts, rrMs, 0, synced FROM rrInterval
+                INSERT INTO rrInterval (deviceId, ts, rrMs, seq, synced)
+                SELECT deviceId, ts, rrMs, 0, synced FROM rrInterval_v24_legacy
                 """)
-            try db.execute(sql: "DROP TABLE rrInterval")
-            try db.execute(sql: "ALTER TABLE rrInterval_new RENAME TO rrInterval")
         }
 
         // v25: Oura live-API raw payload archive (lossless) behind the opt-in cloud import. One row per
@@ -496,7 +499,12 @@ extension WhoopStore {
                 t.column("fetchedAt", .integer).notNull()    // unix seconds
                 t.primaryKey(["deviceId", "endpoint", "documentId"])
             }
-            // Per-endpoint reads scan (deviceId, endpoint) then walk day in order.
+            // Serves the (deviceId, endpoint) lookup. It no longer serves the ORDER BY: `ouraRaw`
+            // sorts by (fetchedAt, rowid) because page producers leave `day` nil, so an all-nil
+            // `day` made the old `ORDER BY day ASC` degenerate to whatever order SQLite returned.
+            // The trailing `day` column stays useful for day-keyed lookups; the sort happens after
+            // the scan. An index on (deviceId, endpoint, fetchedAt) is the change to make if this
+            // archive ever grows enough for that sort to matter.
             try db.create(index: "idx_ouraRaw_device_endpoint_day",
                           on: "ouraRaw", columns: ["deviceId", "endpoint", "day"])
         }
@@ -887,10 +895,10 @@ extension WhoopStore {
                 t.add(column: "skinTempC", .double)
             }
         }
-        // Retire the bounded, write-only legacy cache. Session-owned IMU now lives in the file-backed store.
-        migrator.registerMigration("v41-drop-raw-imu-sample") { db in
-            try db.drop(table: "rawImuSample")
-        }
+        // The legacy IMU cache used to be dropped here. Nutry keeps it: a TestFlight or App Store
+        // update must not delete band history. File-backed sessions are the writer going forward.
+        // The migration id stays so an install that already recorded it does not re-run.
+        migrator.registerMigration("v41-drop-raw-imu-sample") { _ in }
         // Whether every sleep session that day was staged from heart rate alone (#1801). The Kotlin twin
         // is `DailyMetric.sleepHrOnly`, added by Room MIGRATION_35_36; the shared schema oracle pins the
         // two shapes together, so this exists here even while only Android reads it — a column present on
@@ -1090,6 +1098,20 @@ extension WhoopStore {
             // Replaying one session in order.
             try db.create(index: "idx_liftSet_session_ord", on: "liftSet",
                           columns: ["sessionId", "ord"], options: [.ifNotExists])
+        }
+        // v47 (#2371): mark the WHOOP 5 500 ms fill beats already stored, with the rule `insert` applies to
+        // every new batch (`WhoopStore.whoop5RrFillFlagSQL`). Data only, no schema change, and a MARK in
+        // the v35 form, never a delete: the rows stay on disk. Twin of Room
+        // MIGRATION_40_41.
+        migrator.registerMigration("v47-rr-whoop5-fill") { db in
+            try db.execute(sql: WhoopStore.whoop5RrFillMigrationSQL)
+        }
+        // v48: remember the HISTORICAL_DATA layout byte beside the raw. Nullable, no default, no
+        // rewrite of existing raws. A rescore reads it when present and otherwise infers the scale.
+        migrator.registerMigration("v48-skin-temp-layout") { db in
+            try db.alter(table: "skinTempSample") { t in
+                t.add(column: "layoutVersion", .integer)
+            }
         }
         return migrator
     }
